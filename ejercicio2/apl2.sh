@@ -47,7 +47,7 @@ if [ -z "$MATRIZ" ]; then
 fi
 
 while IFS= read -r linea; do
-	IFS='|' read -r -a fila <<< "$linea"
+	IFS='$SEPARADOR' read -r -a fila <<< "$linea"
 
 	if [ $filas -eq 0 ]; then
 		columnas=${#fila[@]}
