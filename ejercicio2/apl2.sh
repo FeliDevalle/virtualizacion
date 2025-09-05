@@ -34,7 +34,10 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-
+if [ "$HUB" = false ] && [ "$CAMINO" = false ];then
+	echo "No se especifico que hacer"
+	exit 1
+fi
 
 if [ "$HUB" = true ] && [ "$CAMINO" = true ]; then
 	echo "No se puede usar -h/-hub junto con -c/--camino"
@@ -47,7 +50,7 @@ if [ -z "$MATRIZ" ]; then
 fi
 
 while IFS= read -r linea; do
-	IFS='$SEPARADOR' read -r -a fila <<< "$linea"
+	IFS="$SEPARADOR" read -r -a fila <<< "$linea"
 
 	if [ $filas -eq 0 ]; then
 		columnas=${#fila[@]}
@@ -68,7 +71,7 @@ while IFS= read -r linea; do
 	
 	filas=$((filas+1))
 done < "$MATRIZ"
-
+echo "$filas-$columnas"
 if [ $filas -ne $columnas ]; then
 	echo "No es una matriz cuadrada ($filas x $columnas)"
 	exit 1
@@ -93,7 +96,36 @@ done
 echo "La matriz es valida"
 
 if [ "$HUB" = true ]; then
-	echo "Buscando HUB..."
+	max_conex=0
+	hubs=()
+	for((i=0; i<filas; i++)); do
+		conexiones=0
+		for((j=0; j<columnas; j++)); do
+			if [ $i -eq $j ]; then
+				continue
+			fi
+			val="${matriz[$((i*filas + j))]}"
+			if ! [[ $val =~ ^0+([.][0]+)?$ ]]; then
+				conexiones=$((conexiones+1))
+			fi
+		done
+
+		if [ $conexiones -gt $max_conex ]; then
+			max_conex=$conexiones
+			hubs=("$((i+1))")
+		elif [ $conexiones -eq $max_conex ];then
+			hubs+=("$((i+1))")
+		fi
+	done
+	if [ $max_conex -eq 0 ]; then
+  		echo "Ninguna estación tiene conexiones directas."
+	else
+  		if [ ${#hubs[@]} -eq 1 ]; then
+			echo "Hub de la red: Estación ${hubs[0]}: (${max_conex})"
+  		else
+    			echo "Hubs (empate): Estaciones ${hubs[*]}"
+  		fi
+	fi
 fi
 
 if [ "$CAMINO" = true ]; then
