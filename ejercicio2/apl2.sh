@@ -1,6 +1,37 @@
 #!/bin/bash
+reconstruir_camino() {
+    local destino=$1
+    local path=()
+    while [[ $destino -ne -1 ]]; do
+        path=("$((destino+1))" "${path[@]}")
+        destino=${prev[$destino]}
+    done
+    echo "${path[*]}"
+}
 
-#archivo="mapa_transporte.txt"
+ayuda()
+{
+	echo "
+	Analiza rutas en una red de transporte público representada como una matriz de adyacencia.
+	Opciones:
+  		-m, --matriz <archivo>       Ruta del archivo que contiene la matriz de adyacencia.
+  		-h, --hub                    Determina qué estación es el "hub" de la red.
+        	                        No se puede usar junto con -c / --camino.
+  		-c, --camino                 Encuentra el camino más corto en tiempo entre todas
+        	                        las estaciones usando el algoritmo de Dijkstra.
+            	                    No se puede usar junto con -h / --hub.
+  		-s, --separador <carácter>   Carácter utilizado como separador de columnas en la matriz.
+  		--help                       Muestra este mensaje de ayuda y sale del script.
+
+	Consideraciones:
+  		1. El archivo de entrada debe contener una matriz cuadrada y simétrica.
+  		2. Los valores de la matriz deben ser numéricos (enteros o decimales).
+  		3. El script generará un archivo de salida llamado:
+        	informe.<nombreArchivoEntrada> en el mismo directorio del archivo original."
+}
+
+
+
 MATRIZ=""
 HUB=false
 CAMINO=false
@@ -15,7 +46,7 @@ while [[ $# -gt 0 ]]; do
 			MATRIZ="$2"
 			shift 2
 			;;
-		-h|--hub)
+		-u|--hub)
 			HUB=true
 			shift
 			;;
@@ -50,6 +81,7 @@ if [ -z "$MATRIZ" ]; then
 fi
 
 while IFS= read -r linea; do
+	linea="${linea//$'\r'/}"
 	IFS="$SEPARADOR" read -r -a fila <<< "$linea"
 
 	if [ $filas -eq 0 ]; then
@@ -62,7 +94,8 @@ while IFS= read -r linea; do
 	fi
 
 	for valor in "${fila[@]}"; do 
-		if ! [[ $valor =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+		
+		if ! [[ "$valor" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
 			echo "Valor invalido en fila $((filas+1)): $valor"
 			exit 1
 		fi
@@ -71,7 +104,6 @@ while IFS= read -r linea; do
 	
 	filas=$((filas+1))
 done < "$MATRIZ"
-echo "$filas-$columnas"
 if [ $filas -ne $columnas ]; then
 	echo "No es una matriz cuadrada ($filas x $columnas)"
 	exit 1
@@ -129,6 +161,55 @@ if [ "$HUB" = true ]; then
 fi
 
 if [ "$CAMINO" = true ]; then
-	echo "Buscando camino corto..."
+	origen=0
+	dist=()
+	prev=()
+	visited=()
+	INF=999999
+	for ((i=0; i<filas; i++)); do
+		dist[$i]=$INF
+		prev[$i]=-1
+		visited[$i]=0
+	done
+	dist[$origen]=0
+
+	for ((count=0; count<filas; count++)); do
+		u=-1
+		min=$INF
+		for ((i=0; i<filas; i++)); do
+			if [[ ${visited[$i]} -eq 0 && ${dist[$i]} -lt $min ]]; then
+				min=${dist[$i]}
+				u=$i
+			fi
+		done
+
+		if [[ $u -eq -1 ]]; then
+			break
+		fi
+
+		visited[$u]=1
+
+		for ((v=0; v<columnas; v++)); do
+			peso=${matriz[$((u*filas + v))]}
+			if [[ $peso -ne 0 ]]; then
+				if (( dist[$u] + peso < dist[$v] )); then
+					dist[$v]=$((dist[$u] + peso))
+					prev[$v]=$u
+				fi
+			fi
+		done
+	done
+
+	for ((i=0; i<filas; i++)); do
+    	if [[ $i -ne $origen ]]; then
+        	if [[ ${dist[$i]} -eq $INF ]]; then
+            	echo "No hay camino de $((origen+1)) a $((i+1))"
+        	else
+            	camino=$(reconstruir_camino $i)
+            	echo "Camino más corto de $((origen+1)) a $((i+1)): tiempo ${dist[$i]}, ruta $camino"
+        	fi
+    	fi
+	done
+
 fi
 
