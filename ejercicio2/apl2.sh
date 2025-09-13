@@ -161,55 +161,68 @@ if [ "$HUB" = true ]; then
 fi
 
 if [ "$CAMINO" = true ]; then
-	origen=0
-	dist=()
-	prev=()
-	visited=()
-	INF=999999
-	for ((i=0; i<filas; i++)); do
-		dist[$i]=$INF
-		prev[$i]=-1
-		visited[$i]=0
-	done
-	dist[$origen]=0
+    INF=999999
+    # inicializar matriz de distancias
+    dist=()
+    next=()
 
-	for ((count=0; count<filas; count++)); do
-		u=-1
-		min=$INF
-		for ((i=0; i<filas; i++)); do
-			if [[ ${visited[$i]} -eq 0 && ${dist[$i]} -lt $min ]]; then
-				min=${dist[$i]}
-				u=$i
-			fi
-		done
+    for ((i=0; i<filas; i++)); do
+        for ((j=0; j<columnas; j++)); do
+            val=${matriz[$((i*filas + j))]}
+            if [[ $i -eq $j ]]; then
+                dist[$((i*filas + j))]=0
+                next[$((i*filas + j))]=-1
+            elif [[ $val -ne 0 ]]; then
+                dist[$((i*filas + j))]=$val
+                next[$((i*filas + j))]=$j
+            else
+                dist[$((i*filas + j))]=$INF
+                next[$((i*filas + j))]=-1
+            fi
+        done
+    done
 
-		if [[ $u -eq -1 ]]; then
-			break
-		fi
+    # algoritmo de Floyd–Warshall
+    for ((k=0; k<filas; k++)); do
+        for ((i=0; i<filas; i++)); do
+            for ((j=0; j<columnas; j++)); do
+                if (( dist[i*filas + k] + dist[k*filas + j] < dist[i*filas + j] )); then
+                    dist[$((i*filas + j))]=$((dist[i*filas + k] + dist[k*filas + j]))
+                    next[$((i*filas + j))]=${next[$((i*filas + k))]}
+                fi
+            done
+        done
+    done
 
-		visited[$u]=1
+    # reconstrucción del camino
+    reconstruir_camino_floyd() {
+        local u=$1
+        local v=$2
+        if [[ ${next[$((u*filas + v))]} -eq -1 ]]; then
+            echo ""
+            return
+        fi
+        local path=($((u+1)))
+        while [[ $u -ne $v ]]; do
+            u=${next[$((u*filas + v))]}
+            path+=($((u+1)))
+        done
+        echo "${path[*]}"
+    }
 
-		for ((v=0; v<columnas; v++)); do
-			peso=${matriz[$((u*filas + v))]}
-			if [[ $peso -ne 0 ]]; then
-				if (( dist[$u] + peso < dist[$v] )); then
-					dist[$v]=$((dist[$u] + peso))
-					prev[$v]=$u
-				fi
-			fi
-		done
-	done
-
-	for ((i=0; i<filas; i++)); do
-    	if [[ $i -ne $origen ]]; then
-        	if [[ ${dist[$i]} -eq $INF ]]; then
-            	echo "No hay camino de $((origen+1)) a $((i+1))"
-        	else
-            	camino=$(reconstruir_camino $i)
-            	echo "Camino más corto de $((origen+1)) a $((i+1)): tiempo ${dist[$i]}, ruta $camino"
-        	fi
-    	fi
-	done
-
+    # imprimir resultados
+    for ((i=0; i<filas; i++)); do
+        for ((j=0; j<columnas; j++)); do
+            if [[ $i -ne $j ]]; then
+                if [[ ${dist[$((i*filas + j))]} -eq $INF ]]; then
+                    echo "No hay camino entre $((i+1)) y $((j+1))"
+                else
+                    camino=$(reconstruir_camino_floyd $i $j)
+                    echo "Camino más corto de $((i+1)) a $((j+1)): tiempo ${dist[$((i*filas + j))]}, ruta $camino"
+                fi
+            fi
+        done
+    done
 fi
+exit 0
 
