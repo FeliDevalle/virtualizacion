@@ -33,7 +33,7 @@ function Get-PidFilePath([string]$repoPath) {
     return Join-Path $env:TEMP "audit_$safe.pid"
 }
 
-function Is-ProcessRunning([int]$pid1) {
+function Test-ProcessRunning([int]$pid1) {
     try {
         Get-Process -Id $pid1 -ErrorAction Stop | Out-Null
         return $true
@@ -58,7 +58,7 @@ if (-not $daemon) {
                 Write-Host "Archivo PID corrupto, removido." 
                 exit 0
             }
-            if (Is-ProcessRunning $pidToKill) {
+            if (Test-ProcessRunning $pidToKill) {
                 Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue
                 Remove-Item $pidFile -ErrorAction SilentlyContinue
                 Write-Host "Demonio detenido (PID $pidToKill)."
@@ -76,7 +76,7 @@ if (-not $daemon) {
     if (Test-Path $pidFile) {
         try {
             $existingPid = [int](Get-Content $pidFile -ErrorAction Stop)
-            if (Is-ProcessRunning $existingPid) {
+            if (Test-ProcessRunning $existingPid) {
                 Fail "Error: Ya existe un demonio en ejecución para este repositorio (PID: $existingPid)."
             } else {
                 # limpiar PID huérfano
@@ -100,7 +100,7 @@ if (-not $daemon) {
         "-daemon"
     )
     # Start-Process para que corra en background y no dependa de la terminal actual
-    $proc = Start-Process -FilePath (Get-Command powershell).Source -ArgumentList $argList -WindowStyle Hidden -PassThru
+    Start-Process -FilePath (Get-Command powershell).Source -ArgumentList $argList -WindowStyle Hidden -PassThru | Out-Null
     Start-Sleep -Seconds 1
 
     # Esperar hasta que el demonio haya escrito su PID (timeout corto)
@@ -149,7 +149,7 @@ $pidFile = Get-PidFilePath $repoFull
 if (Test-Path $pidFile) {
     try {
         $otherPid = [int](Get-Content $pidFile -ErrorAction Stop)
-        if (Is-ProcessRunning $otherPid) {
+        if (Test-ProcessRunning $otherPid) {
             Fail "Error (daemon): ya existe un demonio corriendo para este repo (PID $otherPid)."
         } else {
             Remove-Item $pidFile -ErrorAction SilentlyContinue
@@ -203,7 +203,7 @@ if ([string]::IsNullOrWhiteSpace($lastCommit)) {
 }
 
 # Función para anotar log
-function Log-Alert([string]$pattern, [string]$file) {
+function Write-Alert([string]$pattern, [string]$file) {
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $line = "[$ts] Alerta: patrón '$pattern' encontrado en el archivo '$file'."
     $line | Out-File -FilePath $logFull -Append -Encoding utf8
@@ -249,7 +249,7 @@ try {
                             $pattern = $lineTrim.Substring(6)
                             try {
                                 if ([regex]::IsMatch($content, $pattern)) {
-                                    Log-Alert $pattern $file
+                                    Write-Alert $pattern $file
                                 }
                             } catch {
                                 # patrón regex inválido: escribir una entrada de error en log (no detener demonio)
@@ -260,7 +260,7 @@ try {
                         } else {
                             $pattern = $lineTrim
                             if ($content.IndexOf($pattern, [System.StringComparison]::Ordinal) -ge 0) {
-                                Log-Alert $pattern $file
+                                Write-Alert $pattern $file
                             }
                         }
                     }
