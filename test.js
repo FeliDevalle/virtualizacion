@@ -8,6 +8,6 @@ module.exports = {
     secret: "esto_es_un_secret_de_prueba",    // literal: secret
     password: "MiPass123!"                    // literal: password
   };
-  
-// Fake AWS Access Key ID (cumple AKIA[0-9A-Z]{16})
+
+// AWS Access Key ID 
 const awsId = "AKIA11111111111111";
