@@ -1,4 +1,9 @@
 <#
+#Integrantes:
+#    CORONEL, THIAGO MARTÍN
+#    DEVALLE, FELIPE PEDRO
+#    MURILLO, JOEL ADAN
+#    RUIZ, RAFAEL DAVID NAZARENO
 audit.ps1 - Monitoreo de repositorios Git para patrones sensibles
 
 Uso:

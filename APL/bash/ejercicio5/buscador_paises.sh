@@ -1,4 +1,9 @@
 #!/bin/bash
+#Integrantes:
+#    CORONEL, THIAGO MARTÍN
+#    DEVALLE, FELIPE PEDRO
+#    MURILLO, JOEL ADAN
+#    RUIZ, RAFAEL DAVID NAZARENO
 
 CACHE_FILE="$(dirname "$0")/cache_paises.txt"
 DIR_CACHE=$(dirname "$CACHE_FILE")

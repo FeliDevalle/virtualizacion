@@ -1,4 +1,9 @@
 <#
+#Integrantes:
+#    CORONEL, THIAGO MARTÍN
+#    DEVALLE, FELIPE PEDRO
+#    MURILLO, JOEL ADAN
+#    RUIZ, RAFAEL DAVID NAZARENO
 .SYNOPSIS
     Consulta la API REST Countries y muestra información de países.
 

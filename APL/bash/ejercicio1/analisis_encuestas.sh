@@ -4,6 +4,11 @@
 # Script: analisis_encuestas.sh
 # Objetivo: Procesar encuestas de satisfacción y generar
 #           un resumen en formato JSON por fecha y canal.
+#Integrantes:
+#    CORONEL, THIAGO MARTÍN
+#    DEVALLE, FELIPE PEDRO
+#    MURILLO, JOEL ADAN
+#    RUIZ, RAFAEL DAVID NAZARENO
 # ==========================================================
 
 # -------- Variables globales --------

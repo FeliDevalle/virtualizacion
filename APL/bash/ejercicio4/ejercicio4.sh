@@ -1,4 +1,9 @@
 #!/bin/bash
+#Integrantes:
+#    CORONEL, THIAGO MARTÍN
+#    DEVALLE, FELIPE PEDRO
+#    MURILLO, JOEL ADAN
+#    RUIZ, RAFAEL DAVID NAZARENO
 
 # Valores por defecto
 REPO=""
