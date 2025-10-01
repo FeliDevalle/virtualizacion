@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+#Integrantes:
+#    CORONEL, THIAGO MARTÍN
+#    DEVALLE, FELIPE PEDRO
+#    MURILLO, JOEL ADAN
+#    RUIZ, RAFAEL DAVID NAZARENO
+
 set -euo pipefail
 
 # --- Funciones ---
