@@ -1,7 +1,6 @@
 #!/bin/bash
-# buscador_paises_fix.sh  (versión con parser awk mejorado)
 
-CACHE_FILE="/tmp/cache_paises.txt"
+CACHE_FILE="$(dirname "$0")/cache_paises.txt"
 DIR_CACHE=$(dirname "$CACHE_FILE")
 mkdir -p "$DIR_CACHE"
 
