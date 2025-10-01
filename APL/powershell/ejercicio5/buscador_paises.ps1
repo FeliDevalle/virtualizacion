@@ -29,7 +29,7 @@ param(
 )
 
 # Archivo de caché
-$cacheFile = "C:\APL\5\POWERSHELL\cache_paises.json"
+$cacheFile = Join-Path -Path (Split-Path -Parent $MyInvocation.MyCommand.Definition) -ChildPath "cache_paises.json"
 
 # Cargar cache existente y convertir a Hashtable
 if (Test-Path $cacheFile) {
