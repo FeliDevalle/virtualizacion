@@ -3,3 +3,5 @@ secret = 'hola'
 module.exports = {   
     password: "MiPass123!"                   
   };
+// AWS Access Key ID 
+const awsId = "AKIA11111111111111";
