@@ -1,3 +1,25 @@
+<#
+.SYNOPSIS
+    Consulta la API REST Countries y muestra información de países.
+
+.DESCRIPTION
+    Consulta la API de REST Countries para obtener datos de países.
+    Los resultados se guardan en un archivo de caché en formato JSON.
+    Cada entrada del caché tiene un TTL (time to live). Pasado ese tiempo,
+    se vuelve a consultar la API para actualizar los datos.
+
+.PARAMETER nombre
+    Nombre del país o países a consultar. Puede recibir un array de strings.
+
+.PARAMETER ttl
+    Tiempo de validez del caché en segundos. Pasado este tiempo se consulta
+    nuevamente la API para actualizar los valores.
+
+.EXAMPLE
+    .\ejercicio5.ps1 -nombre spain -ttl 3600
+    Busca información de España y la guarda en caché por 1 hora.
+#>
+
 param(
     [Parameter(Mandatory=$true)]
     [string[]]$nombre,
