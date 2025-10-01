@@ -1,0 +1,2 @@
+Aug 23 10:00:01 cluster error: failed init script to start the jobclusterID cf412g4vh3.
+Oct 01 14:32:47 datanode01 azure-blob[4521]: ConnectionError: Failed to connect to Azure Blob Storage account 'mystorageaccount' (ErrorCode=ConnectionTimeout, Endpoint=https://mystorageaccount.blob.core.windows.net).
