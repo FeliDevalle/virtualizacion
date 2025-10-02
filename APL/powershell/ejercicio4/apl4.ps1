@@ -85,18 +85,36 @@ if (-not $daemon) {
 # -------------------
 # --- MODO DEMONIO ---
 # -------------------
-if (-not $repo) { exit 1 }
-if (-not $configuracion) { exit 1 }
 
-$repoFull = ""
-$configFull = ""
-$logFull = ""
+# <-- CAMBIO: Ruta fija para un log de errores fatales del demonio.
+$fatalErrorLog = Join-Path $env:TEMP "audit_daemon_fatal_error.log"
+
+# <-- CAMBIO: Escribimos al log de errores fatales para saber que el demonio al menos se inició.
+"$(Get-Date) - Demonio iniciado. PID: $PID. Intentando resolver rutas..." | Out-File -FilePath $fatalErrorLog -Append
 
 try {
+    # Verificamos los parámetros recibidos
+    if (-not $repo) { throw "El parámetro -repo no fue recibido por el demonio." }
+    if (-not $configuracion) { throw "El parámetro -configuracion no fue recibido por el demonio." }
+
+    "$(Get-Date) - Parámetros recibidos: repo=[$repo], configuracion=[$configuracion], log=[$log]" | Out-File -FilePath $fatalErrorLog -Append
+
     $repoFull = (Resolve-Path $repo).ProviderPath
+    "$(Get-Date) - Ruta -repo resuelta a: $repoFull" | Out-File -FilePath $fatalErrorLog -Append
+    
     $configFull = (Resolve-Path $configuracion).ProviderPath
+    "$(Get-Date) - Ruta -configuracion resuelta a: $configFull" | Out-File -FilePath $fatalErrorLog -Append
+
     $logFull = (Resolve-Path $log).ProviderPath
-} catch { exit 1 }
+    "$(Get-Date) - Ruta -log resuelta a: $logFull" | Out-File -FilePath $fatalErrorLog -Append
+
+} catch {
+    # <-- CAMBIO CRÍTICO: Si algo falla arriba, lo registramos y salimos.
+    $errorMessage = "$(Get-Date) - ERROR FATAL AL INICIAR DEMONIO: $($_.Exception.Message)"
+    $errorMessage | Out-File -FilePath $fatalErrorLog -Append
+    exit 1
+}
+
 
 # <-- NUEVO: Chequeo de sanidad extra. Si alguna ruta es nula o vacía, el demonio termina.
 if ([string]::IsNullOrWhiteSpace($repoFull) -or [string]::IsNullOrWhiteSpace($configFull) -or [string]::IsNullOrWhiteSpace($logFull)) {
