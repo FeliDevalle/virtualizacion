@@ -199,7 +199,7 @@ try {
                                     "[$ts] ERROR: patrón regex inválido '$($patternObj.Value)'" | Out-File -FilePath $logFull -Append -Encoding utf8
                                 }
                             } else { # Literal
-                                if ($content.IndexOf($patternObj.Value, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                                if ($content -match [regex]::Escape($patternObj.Value)) {
                                     Write-Alert $patternObj.Value $file $logFull
                                 }
                             }
