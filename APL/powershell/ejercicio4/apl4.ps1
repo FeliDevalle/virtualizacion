@@ -209,8 +209,7 @@ if ([string]::IsNullOrWhiteSpace($branch)) {
 # Obtener último commit inicial
 try {
     git fetch origin $branch 2>$null | Out-Null
-    $lastCommit = git rev-parse "origin/$branch" 2>$null
-    $lastCommit = $lastCommit.Trim()
+    $lastCommit = ([string](git rev-parse "origin/$branch" 2>$null)).Trim()
 } catch {
     $lastCommit = ""
 }
@@ -233,30 +232,19 @@ try {
     while ($true) {
         # Intentar detectar cambios en remoto
         git fetch origin $branch 2>$null | Out-Null
-        $newCommit = git rev-parse "origin/$branch" 2>$null
-        $newCommit = $newCommit.Trim()
+        $newCommit = ([string](git rev-parse "origin/$branch" 2>$null)).Trim()
+
         if (-not [string]::IsNullOrWhiteSpace($newCommit) -and $newCommit -ne $lastCommit) {
-            $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-            ("[$ts] Nuevo commit detectado: {0}" -f $newCommit) | Out-File -FilePath $logFull -Append -Encoding utf8
-
-            # Obtener lista de archivos modificados entre commits
-            $files = git diff --name-only $lastCommit $newCommit 2>$null
-            if ($files) {
-                $files = $files -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+            try {
+                $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                ("[$ts] Nuevo commit detectado: {0}" -f $newCommit) | Out-File -FilePath $logFull -Append -Encoding utf8
+            
+                # Obtener archivos modificados entre commits
+                $files = git diff --name-only $lastCommit $newCommit 2>$null
                 foreach ($file in $files) {
-                    # Evitar archivos binarios grandes: si git show falla, ignorar
-                    try {
-                            # Construir especificador commit:file evitando ambigüedad de variables
-                            $spec = "$($newCommit):$file"
-
-                            # Ejecutar git show y unir líneas en un único string
-                            $content = (git show $spec 2>$null) -join "`n"
-
-                            # Si git falló o no devolvió contenido, saltar
-                            if (-not $content) { continue }
-                    } catch {
-                        continue
-                    }
+                    $spec = "{0}:{1}" -f $newCommit, $file
+                    $content = git show $spec 2>$null
+                    if (-not $content) { continue }
 
                     # Leer patrones
                     $patternLines = Get-Content $configFull -ErrorAction SilentlyContinue
@@ -267,7 +255,7 @@ try {
                         if ($lineTrim.StartsWith("regex:")) {
                             $pattern = $lineTrim.Substring(6)
                             try {
-                                if ([regex]::IsMatch($content, $pattern)) {
+                                if ([regex]::IsMatch($content, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
                                     Write-Alert $pattern $file
                                 }
                             } catch {
@@ -278,17 +266,22 @@ try {
                             }
                         } else {
                             $pattern = $lineTrim
-                            if ($content.IndexOf($pattern, [System.StringComparison]::Ordinal) -ge 0) {
+                            if ($content.IndexOf($pattern, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
                                 Write-Alert $pattern $file
                             }
                         }
                     }
                 }
+            
+                # actualizar último commit solo si todo bien
+                $lastCommit = $newCommit
+            
+            } catch {
+                # registrar la excepción y continuar (NO terminamos el demonio)
+                $errTs = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                ("[$errTs] ERROR procesando commit {0}: {1}" -f $newCommit, $_.Exception.ToString()) | Out-File -FilePath $logFull -Append -Encoding utf8
             }
-
-            # Actualizar último commit revisado
-            $lastCommit = $newCommit
-        }
+        }            
 
         Start-Sleep -Seconds $alerta
 
