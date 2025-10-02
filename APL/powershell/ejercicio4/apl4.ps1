@@ -1,23 +1,37 @@
 <#
+.SYNOPSIS
+  apl4.ps1 - Monitoreo de repositorios Git para patrones sensibles
+
+.DESCRIPTION
+  Demonio que monitoriza cambios en la rama principal y registra alertas cuando encuentra patrones sensibles.
+  Uso:
+    Iniciar:  .\apl4.ps1 -repo "C:\miRepo" -configuracion ".\patrones.conf" -alerta 10 -log ".\audit.log"
+    Detener:  .\apl4.ps1 -repo "C:\miRepo" -kill
+
+.PARAMETER repo
+  Ruta del repositorio Git a monitorear (acepta rutas relativas, absolutas y con espacios).
+
+.PARAMETER configuracion
+  Ruta del archivo de configuración con patrones. Soporta comentarios con '#' y prefijos 'regex:'.
+
+.PARAMETER log
+  Ruta del archivo donde se registran las alertas (por defecto .\audit.log).
+
+.PARAMETER alerta
+  Intervalo en segundos entre comprobaciones (por defecto 10).
+
+.PARAMETER kill
+  Flag para detener el demonio asociado al repo especificado.
+
+.EXAMPLE
+  Get-Help .\apl4.ps1 -Full
+#>
+
 #Integrantes:
 #    CORONEL, THIAGO MARTÍN
 #    DEVALLE, FELIPE PEDRO
 #    MURILLO, JOEL ADAN
 #    RUIZ, RAFAEL DAVID NAZARENO
-audit.ps1 - Monitoreo de repositorios Git para patrones sensibles
-
-Uso:
-Iniciar (lanza proceso en background):
-    .\audit.ps1 -repo "C:\ruta\miRepo" -configuracion "C:\ruta\patrones.conf" -alerta 10 -log "C:\ruta\audit.log"
-
-Detener:
-    .\audit.ps1 -repo "C:\ruta\miRepo" -kill
-
-Notas:
-- El script detecta la rama principal consultando 'git remote show origin' y usando 'origin/<branch>'.
-- El archivo de patrones acepta líneas vacías y comentarios (#). Prefijo 'regex:' para patrones regex.
-- No arranca más de un demonio por repositorio (archivo PID en $env:TEMP).
-#>
 
 param(
     [string]$repo,
