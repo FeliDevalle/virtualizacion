@@ -1,2 +1,3 @@
 // AWS Access Key ID 
 const awsId = "AKIA11111111111111";
+PASSWORD = "1234567890";
