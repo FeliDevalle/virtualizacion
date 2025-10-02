@@ -34,11 +34,18 @@
 #    RUIZ, RAFAEL DAVID NAZARENO
 
 param(
+    [Parameter(Mandatory=$true)]
     [string]$repo,
+
+    [Parameter(Mandatory=$true)]
     [string]$configuracion,
+
     [string]$log = ".\audit.log",
+
     [switch]$kill,
+
     [int]$alerta = 10,
+
     [switch]$daemon
 )
 
@@ -278,7 +285,7 @@ try {
                             }
                         } else {
                             $pattern = $lineTrim
-                            if ($content.IndexOf($pattern, [System.StringComparison]::Ordinal) -ge 0) {
+                            if ($content.IndexOf($pattern, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
                                 Write-Alert $pattern $file
                             }
                         }
