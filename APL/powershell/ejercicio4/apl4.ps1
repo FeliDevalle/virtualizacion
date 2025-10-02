@@ -1,9 +1,36 @@
 <#
 .SYNOPSIS
-  apl4.ps1 - Monitoreo de repositorios Git para patrones sensibles (VERSIÓN DE DEPURACIÓN)
-#>
+  apl4.ps1 - Monitoreo de repositorios Git para patrones sensibles
 
-# ... (toda la sección de ayuda se mantiene igual) ...
+.DESCRIPTION
+  Demonio que monitoriza cambios en la rama principal y registra alertas cuando encuentra patrones sensibles.
+  Uso:
+    Iniciar:  .\apl4.ps1 -repo "C:\miRepo" -configuracion ".\patrones.conf" -alerta 10 -log ".\audit.log"
+    Detener:  .\apl4.ps1 -repo "C:\miRepo" -kill
+
+.PARAMETER repo
+  Ruta del repositorio Git a monitorear (acepta rutas relativas, absolutas y con espacios).
+
+.PARAMETER configuracion
+  Ruta del archivo de configuración con patrones. Soporta comentarios con '#' y prefijos 'regex:'.
+
+.PARAMETER log
+  Ruta del archivo donde se registran las alertas (por defecto .\audit.log).
+
+.PARAMETER alerta
+  Intervalo en segundos entre comprobaciones (por defecto 10).
+
+.PARAMETER kill
+  Flag para detener el demonio asociado al repo especificado.
+
+.EXAMPLE
+  Get-Help .\apl4.ps1 -Full
+#>
+#Integrantes:
+#    CORONEL, THIAGO MARTÍN
+#    DEVALLE, FELIPE PEDRO
+#    MURILLO, JOEL ADAN
+#    RUIZ, RAFAEL DAVID NAZARENO
 
 param(
     [Parameter(Mandatory=$true, HelpMessage="La ruta al repositorio Git es obligatoria.")]
@@ -15,9 +42,11 @@ param(
     [switch]$daemon
 )
 
-# --- (Todas las funciones Fail, Get-PidFilePath, Test-ProcessRunning se mantienen igual) ---
-function Fail([string]$msg) {
+function Fail([string]$msg, [string]$details = $null) {
     Write-Host $msg -ForegroundColor Red
+    if ($details) {
+        Write-Host $details -ForegroundColor Yellow
+    }
     exit 1
 }
 
@@ -26,15 +55,22 @@ function Get-PidFilePath([string]$repoPath) {
     return Join-Path $env:TEMP "audit_$safe.pid"
 }
 
+function Get-ErrorFilePath([string]$repoPath) {
+    $safe = ($repoPath -replace '[\\/: ]','_') -replace '[^\w\-_\.]','_'
+    return Join-Path $env:TEMP "audit_error_$safe.tmp"
+}
+
 function Test-ProcessRunning([int]$pid1) {
     return $(try { Get-Process -Id $pid1 -ErrorAction Stop } catch { $false }) -ne $false
 }
 
-
 # --- MODO LANZADOR ---
 if (-not $daemon) {
     if (-not $repo) { Fail "Error: El parámetro -repo es obligatorio." }
+
     $pidFile = Get-PidFilePath $repo
+    $errorFile = Get-ErrorFilePath $repo 
+
     if ($kill) {
         if (Test-Path $pidFile) {
             try {
@@ -42,15 +78,15 @@ if (-not $daemon) {
                 if (Test-ProcessRunning $pidToKill) {
                     Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue
                     Write-Host "Demonio detenido (PID $pidToKill)."
-                } else {
-                    Write-Host "El proceso del demonio (PID $pidToKill) ya no existía. Limpiando archivo PID."
-                }
+                } else { Write-Host "El proceso del demonio (PID $pidToKill) ya no existía. Limpiando archivo PID." }
             } catch { Write-Host "El archivo PID estaba corrupto o no se pudo leer." }
             finally { Remove-Item $pidFile -ErrorAction SilentlyContinue }
         } else { Write-Host "No se encontró un demonio en ejecución para este repositorio." }
         exit 0
     }
+
     if (-not $configuracion) { Fail "Error: El parámetro -configuracion es obligatorio para iniciar el demonio." }
+
     if (Test-Path $pidFile) {
         try {
             $existingPid = [int](Get-Content $pidFile -ErrorAction Stop)
@@ -59,6 +95,9 @@ if (-not $daemon) {
             } else { Remove-Item $pidFile -ErrorAction SilentlyContinue }
         } catch { Remove-Item $pidFile -ErrorAction SilentlyContinue }
     }
+    
+    Remove-Item $errorFile -ErrorAction SilentlyContinue
+
     $scriptFullPath = $MyInvocation.MyCommand.Definition
     $argList = @(
         "-NoProfile", "-ExecutionPolicy", "Bypass",
@@ -70,71 +109,56 @@ if (-not $daemon) {
     )
     Start-Process -FilePath powershell.exe -ArgumentList $argList -WindowStyle Hidden -PassThru | Out-Null
     Start-Sleep -Seconds 1
+
     $wait = 0
     while (($wait -lt 5) -and (-not (Test-Path $pidFile))) {
         Start-Sleep -Milliseconds 200
         $wait += 1
     }
+
     if (Test-Path $pidFile) {
         $daemonPid = Get-Content $pidFile -ErrorAction SilentlyContinue
         Write-Host "Demonio iniciado en segundo plano (PID $daemonPid). Monitoreando '$repo' cada $alerta segundos."
+        Remove-Item $errorFile -ErrorAction SilentlyContinue 
         exit 0
-    } else { Fail "Fallo al iniciar el demonio. Verifique los permisos y las rutas." }
+    } else {
+        $errorDetails = ""
+        if (Test-Path $errorFile) {
+            $errorDetails = Get-Content $errorFile
+            Remove-Item $errorFile -ErrorAction SilentlyContinue
+        }
+        Fail "Fallo al iniciar el demonio. Causa del error:" $errorDetails
+    }
 }
 
 # -------------------
 # --- MODO DEMONIO ---
 # -------------------
-
-# <-- CAMBIO: Ruta fija para un log de errores fatales del demonio.
-$fatalErrorLog = Join-Path $env:TEMP "audit_daemon_fatal_error.log"
-
-# <-- CAMBIO: Escribimos al log de errores fatales para saber que el demonio al menos se inició.
-"$(Get-Date) - Demonio iniciado. PID: $PID. Intentando resolver rutas..." | Out-File -FilePath $fatalErrorLog -Append
-
 try {
-    # Verificamos los parámetros recibidos
-    if (-not $repo) { throw "El parámetro -repo no fue recibido por el demonio." }
-    if (-not $configuracion) { throw "El parámetro -configuracion no fue recibido por el demonio." }
+    if (-not $repo) { throw "Parámetro -repo no fue recibido." }
+    if (-not $configuracion) { throw "Parámetro -configuracion no fue recibido." }
 
-    "$(Get-Date) - Parámetros recibidos: repo=[$repo], configuracion=[$configuracion], log=[$log]" | Out-File -FilePath $fatalErrorLog -Append
+    $repoFull = (Resolve-Path $repo -ErrorAction Stop).ProviderPath
+    $configFull = (Resolve-Path $configuracion -ErrorAction Stop).ProviderPath
+    $logFull = (Resolve-Path $log -ErrorAction Stop).ProviderPath
 
-    $repoFull = (Resolve-Path $repo).ProviderPath
-    "$(Get-Date) - Ruta -repo resuelta a: $repoFull" | Out-File -FilePath $fatalErrorLog -Append
-    
-    $configFull = (Resolve-Path $configuracion).ProviderPath
-    "$(Get-Date) - Ruta -configuracion resuelta a: $configFull" | Out-File -FilePath $fatalErrorLog -Append
+    if (-not (Test-Path (Join-Path $repoFull ".git"))) { throw "'$repoFull' no es un repositorio Git válido." }
 
-    $logFull = (Resolve-Path $log).ProviderPath
-    "$(Get-Date) - Ruta -log resuelta a: $logFull" | Out-File -FilePath $fatalErrorLog -Append
-
+    $pidFile = Get-PidFilePath $repoFull
+    if (Test-Path $pidFile) {
+        try {
+            $otherPid = [int](Get-Content $pidFile -ErrorAction Stop)
+            if (Test-ProcessRunning $otherPid) { exit 1 }
+        } catch {}
+    }
+    $PID | Out-File -FilePath $pidFile -Encoding ascii -Force
 } catch {
-    # <-- CAMBIO CRÍTICO: Si algo falla arriba, lo registramos y salimos.
-    $errorMessage = "$(Get-Date) - ERROR FATAL AL INICIAR DEMONIO: $($_.Exception.Message)"
-    $errorMessage | Out-File -FilePath $fatalErrorLog -Append
+    $errorFileForDaemon = Get-ErrorFilePath $repo
+    $_.Exception.Message | Out-File -FilePath $errorFileForDaemon -Encoding utf8
     exit 1
 }
-
-
-# <-- NUEVO: Chequeo de sanidad extra. Si alguna ruta es nula o vacía, el demonio termina.
-if ([string]::IsNullOrWhiteSpace($repoFull) -or [string]::IsNullOrWhiteSpace($configFull) -or [string]::IsNullOrWhiteSpace($logFull)) {
-    exit 1
-}
-
-if (-not (Test-Path (Join-Path $repoFull ".git"))) { exit 1 }
-
-$pidFile = Get-PidFilePath $repoFull
-
-if (Test-Path $pidFile) {
-    try {
-        $otherPid = [int](Get-Content $pidFile -ErrorAction Stop)
-        if (Test-ProcessRunning $otherPid) { exit 1 }
-    } catch { }
-}
-$PID | Out-File -FilePath $pidFile -Encoding ascii -Force
 
 Set-Location $repoFull
-
 $branch = (git symbolic-ref refs/remotes/origin/HEAD -q) -replace 'refs/remotes/origin/', ''
 if ([string]::IsNullOrWhiteSpace($branch)) { $branch = 'main' }
 
@@ -164,13 +188,7 @@ try {
                 $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                 ("[$ts] Nuevo commit detectado: {0}" -f $newCommit) | Out-File -FilePath $logFull -Append -Encoding utf8
                 
-                # <-- ¡AQUÍ ESTÁ LA CLAVE DE LA DEPURACIÓN!
-                # Escribimos el valor de las variables en el log ANTES de usarlas.
-                $debugMsg = "[$ts] DEBUG: Verificando variables. logFull=[$logFull], configFull=[$configFull]"
-                $debugMsg | Out-File -FilePath $logFull -Append -Encoding utf8
-
                 $patterns = @()
-                # Esta es la línea que probablemente está fallando.
                 $patternLines = Get-Content $configFull -ErrorAction SilentlyContinue
                 if ($null -ne $patternLines) {
                     foreach ($line in $patternLines) {
