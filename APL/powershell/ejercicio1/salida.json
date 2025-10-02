@@ -1,0 +1,60 @@
+﻿{
+    "2025-06-30":  {
+                       "Telefono":  {
+                                        "tiempo_respuesta_promedio":  4.95,
+                                        "nota_satisfaccion_promedio":  2.5
+                                    }
+                   },
+    "2025-07-01":  {
+                       "Email":  {
+                                     "tiempo_respuesta_promedio":  120,
+                                     "nota_satisfaccion_promedio":  5
+                                 },
+                       "Telefono":  {
+                                        "tiempo_respuesta_promedio":  5.5,
+                                        "nota_satisfaccion_promedio":  4
+                                    }
+                   },
+    "2025-07-02":  {
+                       "Email":  {
+                                     "tiempo_respuesta_promedio":  45,
+                                     "nota_satisfaccion_promedio":  2.5
+                                 },
+                       "Chat":  {
+                                    "tiempo_respuesta_promedio":  4,
+                                    "nota_satisfaccion_promedio":  4.5
+                                },
+                       "Telefono":  {
+                                        "tiempo_respuesta_promedio":  3,
+                                        "nota_satisfaccion_promedio":  5
+                                    }
+                   },
+    "2025-07-03":  {
+                       "Email":  {
+                                     "tiempo_respuesta_promedio":  90,
+                                     "nota_satisfaccion_promedio":  4
+                                 },
+                       "Chat":  {
+                                    "tiempo_respuesta_promedio":  1.75,
+                                    "nota_satisfaccion_promedio":  4.5
+                                },
+                       "Telefono":  {
+                                        "tiempo_respuesta_promedio":  9,
+                                        "nota_satisfaccion_promedio":  2.5
+                                    }
+                   },
+    "2025-07-04":  {
+                       "Email":  {
+                                     "tiempo_respuesta_promedio":  17.5,
+                                     "nota_satisfaccion_promedio":  4.5
+                                 },
+                       "Chat":  {
+                                    "tiempo_respuesta_promedio":  5,
+                                    "nota_satisfaccion_promedio":  3
+                                },
+                       "Telefono":  {
+                                        "tiempo_respuesta_promedio":  9,
+                                        "nota_satisfaccion_promedio":  3
+                                    }
+                   }
+}
