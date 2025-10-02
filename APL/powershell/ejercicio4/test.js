@@ -1,6 +1,1 @@
-// AWS Access Key ID 
-const awsId = "AKIA11111111111111";
-PASSWORD = "1234567890";
-password = "1234567890";
-SECRET = "1234567890";
 api_key = "1234567890";
