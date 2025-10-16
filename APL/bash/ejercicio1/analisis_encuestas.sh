@@ -1,5 +1,3 @@
-#!/bin/bash
-
 # ==========================================================
 # Script: analisis_encuestas.sh
 # Objetivo: Procesar encuestas de satisfacción y generar
@@ -11,8 +9,11 @@
 #    RUIZ, RAFAEL DAVID NAZARENO
 # ==========================================================
 
+
 # -------- Variables globales --------
 DIR_INPUT=""
+ARCHIVO_SALIDA=""
+MODO_PANTALLA=false
 TMP_FILE="/tmp/encuestas_$$.tmp"
 
 # -------- Limpieza en salida o error --------
@@ -22,11 +23,13 @@ trap 'rm -f "$TMP_FILE"' EXIT
 
 mostrar_ayuda() {
     cat << EOF
-Uso: $0 -d <directorio>
+Uso: $0 -d <directorio> [-a <archivo_salida.json> | -p]
 
 Opciones:
-  -d <directorio>   Directorio donde están los archivos de encuestas
-  -h, --help        Muestra esta ayuda
+  -d <directorio>       Directorio donde están los archivos de encuestas
+  -a <archivo_salida>   Ruta completa del archivo JSON de salida
+  -p                    Muestra la salida por pantalla (no se puede usar con -a)
+  -h, --help            Muestra esta ayuda
 
 Descripción:
   El script procesa todos los archivos de encuestas en el directorio indicado.
@@ -34,7 +37,8 @@ Descripción:
   por canal y por día, mostrando el resultado en formato JSON.
 
 Ejemplo:
-  $0 -d ./datos
+  $0 -d ./datos -a ./salida.json
+  $0 -d ./datos -p
 EOF
 }
 
@@ -49,10 +53,19 @@ validar_parametros() {
         echo "Error: El directorio '$DIR_INPUT' no existe o no es válido" >&2
         exit 1
     fi
+
+    if [[ -n "$ARCHIVO_SALIDA" && "$MODO_PANTALLA" = true ]]; then
+        echo "Error: No se puede usar -a y -p al mismo tiempo" >&2
+        exit 1
+    fi
+
+    if [[ -z "$ARCHIVO_SALIDA" && "$MODO_PANTALLA" = false ]]; then
+        echo "Error: Debe usar -a o -p para indicar la salida" >&2
+        exit 1
+    fi
 }
 
 procesar_archivos() {
-    # Procesar todos los archivos *.txt en el directorio
     awk -F"|" '
     {
         fecha = substr($2,1,10)   # yyyy-mm-dd
@@ -65,7 +78,6 @@ procesar_archivos() {
         conteo[fecha "|" canal]++
     }
     END {
-        # Imprimir resultados en pseudo-JSON
         printf "{\n"
         first_date = 1
         for (key in conteo) {
@@ -84,7 +96,6 @@ procesar_archivos() {
             datos[fecha, canal] = sprintf("{ \"tiempo_promedio\": %.2f, \"nota_promedio\": %.2f }", tiempo_prom, nota_prom)
         }
 
-        # Ordenar fechas alfabéticamente
         n = asort(lista_fechas, ordenadas)
 
         for (i=1; i<=n; i++) {
@@ -109,17 +120,39 @@ procesar_archivos() {
 }
 
 mostrar_resultado() {
-    cat "$TMP_FILE"
+    if [[ "$MODO_PANTALLA" = true ]]; then
+        cat "$TMP_FILE"
+    else
+        mv "$TMP_FILE" "$ARCHIVO_SALIDA"
+        echo "Archivo JSON generado en: $ARCHIVO_SALIDA"
+    fi
 }
 
 # -------- Programa principal --------
 
-# Parseo de parámetros
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -d)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                echo "Error: Falta la ruta del directorio después de -d" >&2
+                mostrar_ayuda
+                exit 1
+            fi
             DIR_INPUT="$2"
             shift 2
+            ;;
+        -a)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                echo "Error: Falta la ruta del archivo después de -a" >&2
+                mostrar_ayuda
+                exit 1
+            fi
+            ARCHIVO_SALIDA="$2"
+            shift 2
+            ;;
+        -p)
+            MODO_PANTALLA=true
+            shift
             ;;
         -h|--help)
             mostrar_ayuda
@@ -133,7 +166,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+
 validar_parametros
 procesar_archivos
 mostrar_resultado
-
