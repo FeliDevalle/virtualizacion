@@ -76,7 +76,7 @@ function Get-TempDir {
     } catch {
         $lastError = $_.Exception.Message
     }
-    
+
     if ([string]::IsNullOrWhiteSpace($tempPath)) {
         # recurrimos a las rutas de sistema como último recurso.
         if ($IsWindows) {
@@ -196,7 +196,10 @@ try {
     $repoFull = (Resolve-Path $repo -ErrorAction Stop).ProviderPath
     $configFull = (Resolve-Path $configuracion -ErrorAction Stop).ProviderPath
     $logFull = (Resolve-Path $log -ErrorAction Stop).ProviderPath
-
+    # Verificamos que la ruta para el archivo de log no sea un directorio. (PERDÍ MUCHO TIEMPO EN ESTO)
+    if (Test-Path -Path $logFull -PathType Container) {
+        throw "La ruta para el archivo de log ('$logFull') no puede ser un directorio."
+    }
     if (-not (Test-Path (Join-Path $repoFull ".git"))) { throw "'$repoFull' no es un repositorio Git válido." }
 
     $pidFile = Get-PidFilePath $repoFull
@@ -235,11 +238,12 @@ function Write-Alert([string]$pattern, [string]$file, [string]$logPath) {
 
 try {
     while ($true) {
-        git fetch origin $branch 2>$null | Out-Null
-        $newCommit = (git rev-parse "origin/$branch" 2>$null).Trim()
+        try {
+            git fetch origin $branch 2>$null | Out-Null
+            $newCommit = (git rev-parse "origin/$branch" 2>$null).Trim()
 
-        if (-not [string]::IsNullOrWhiteSpace($newCommit) -and $newCommit -ne $lastCommit) {
-            try {
+            if (-not [string]::IsNullOrWhiteSpace($newCommit) -and $newCommit -ne $lastCommit) {
+                
                 $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                 ("[$ts] Nuevo commit detectado: {0}" -f $newCommit) | Out-File -FilePath $logFull -Append -Encoding utf8
                 
@@ -280,10 +284,10 @@ try {
                     }
                 }
                 $lastCommit = $newCommit
-            } catch {
-                $errTs = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-                ("[$errTs] ERROR procesando commit {0}: {1}" -f $newCommit, $_.Exception.ToString()) | Out-File -FilePath $logFull -Append -Encoding utf8
             }
+        } catch {
+            $errTs = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+            ("[$errTs] ERROR durante el ciclo de monitoreo: {0}" -f $_.Exception.ToString()) | Out-File -FilePath $logFull -Append -Encoding utf8
         }
         
         Start-Sleep -Seconds $alerta
