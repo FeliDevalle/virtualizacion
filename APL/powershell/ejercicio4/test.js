@@ -1,2 +1,3 @@
 api_key = "12345678901";
 PASSWORD = "1234567890";
+const awsId = "AKIA11111111111111";
