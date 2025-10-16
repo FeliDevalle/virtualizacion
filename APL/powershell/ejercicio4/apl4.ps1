@@ -5,7 +5,7 @@
 .DESCRIPTION
   Demonio que monitoriza cambios en la rama principal y registra alertas cuando encuentra patrones sensibles.
   Uso:
-    Iniciar:  .\apl4.ps1 -repo "C:\miRepo" -configuracion ".\patrones.conf" -alerta 10 -log ".\audit.log"
+    Iniciar:  .\apl4.ps1 -repo "C:\miRepo" -configuracion ".\patrones.conf" -alerta 10 -log "C:\audit.log"
     Detener:  .\apl4.ps1 -repo "C:\miRepo" -kill
 
 .PARAMETER repo
@@ -15,7 +15,7 @@
   Ruta del archivo de configuración con patrones. Soporta comentarios con '#' y prefijos 'regex:'.
 
 .PARAMETER log
-  Ruta del archivo donde se registran las alertas (por defecto .\audit.log).
+  Ruta del archivo donde se registran las alertas (por defecto"C:\audit.log).
 
 .PARAMETER alerta
   Intervalo en segundos entre comprobaciones (por defecto 10).
@@ -34,12 +34,22 @@
 #    RUIZ, RAFAEL DAVID NAZARENO
 
 param(
-    [Parameter(Mandatory=$true, HelpMessage="La ruta al repositorio Git es obligatoria.")]
+    [Parameter(Mandatory=$true, ParameterSetName='Run')]
+    [Parameter(Mandatory=$true, ParameterSetName='Kill')]
     [string]$repo,
+
+    [Parameter(Mandatory=$true, ParameterSetName='Run')]
     [string]$configuracion,
-    [string]$log = ".\audit.log",
-    [switch]$kill,
+
+    [Parameter(Mandatory=$true, ParameterSetName='Run')]
+    [string]$log,
+
+    [Parameter(Mandatory=$false, ParameterSetName='Run')]
     [int]$alerta = 10,
+
+    [Parameter(Mandatory=$true, ParameterSetName='Kill')]
+    [switch]$kill,
+
     [switch]$daemon
 )
 
@@ -51,14 +61,58 @@ function Fail([string]$msg, [string]$details = $null) {
     exit 1
 }
 
+function Get-TempDir {
+    $tempPath = ''
+    $lastError = ''
+
+    try {
+        $userTemp = [System.IO.Path]::GetTempPath()
+        if (-not [string]::IsNullOrWhiteSpace($userTemp)) {
+            $testFile = Join-Path $userTemp ([System.Guid]::NewGuid().ToString())
+            New-Item -Path $testFile -ItemType File -Force > $null
+            Remove-Item -Path $testFile -Force
+            $tempPath = $userTemp
+        }
+    } catch {
+        $lastError = $_.Exception.Message
+    }
+    
+    if ([string]::IsNullOrWhiteSpace($tempPath)) {
+        # recurrimos a las rutas de sistema como último recurso.
+        if ($IsWindows) {
+            $tempPath = Join-Path $env:windir "Temp"
+        } else {
+            $tempPath = "/tmp"
+        }
+    }
+
+    if (-not (Test-Path $tempPath)) {
+        try {
+            New-Item -ItemType Directory -Path $tempPath -Force -ErrorAction Stop | Out-Null
+        } catch {
+            throw "No se pudo encontrar ni crear un directorio temporal válido. Último error: $lastError"
+        }
+    }
+    
+    return $tempPath.TrimEnd('\','/')
+}
+
+function Make-SafeName([string]$path) {
+    if (-not $path) { return 'unknown_repo' }
+    $safe = ($path -replace '[\\/: ]','_') -replace '[^\w\-_\.]','_'
+    return $safe
+}
+
 function Get-PidFilePath([string]$repoPath) {
-    $safe = ($repoPath -replace '[\\/: ]','_') -replace '[^\w\-_\.]','_'
-    return Join-Path $env:TEMP "audit_$safe.pid"
+    $safe = Make-SafeName $repoPath
+    $tmpDir = Get-TempDir
+    return Join-Path $tmpDir "audit_$safe.pid"
 }
 
 function Get-ErrorFilePath([string]$repoPath) {
-    $safe = ($repoPath -replace '[\\/: ]','_') -replace '[^\w\-_\.]','_'
-    return Join-Path $env:TEMP "audit_error_$safe.tmp"
+    $safe = Make-SafeName $repoPath
+    $tmpDir = Get-TempDir
+    return Join-Path $tmpDir "audit_error_$safe.tmp"
 }
 
 function Test-ProcessRunning([int]$pid1) {
