@@ -1,3 +1,7 @@
-﻿[2025-09-30 19:19:14] Nuevo commit detectado: c088c16b57046cdbde09a86fb32750a2e24fcd3d
-[2025-09-30 19:19:14] Alerta: patrÃ³n 'API_KEY' encontrado en el archivo 'test.js'.
-[2025-09-30 19:19:14] Alerta: patrÃ³n 'secret' encontrado en el archivo 'test.js'.
+﻿2025-10-16 18:03:38 - Demonio iniciado. Monitoreando '/tmp/repoBash4' en la rama 'master'.
+2025-10-16 18:04:10 - Nuevos cambios detectados. Analizando commits desde 4014fc970509f745dba7fdd95cdbfb86eec95e5e a 5838f45f5e8019704943406d491172739a90e3e1.
+2025-10-16 18:04:10 - Alerta [Texto]: Patrón 'password' encontrado en el archivo 'db_config.txt'.
+2025-10-16 18:12:27 - Demonio iniciado. Monitoreando '/tmp/repoBash4' en la rama 'master'.
+2025-10-16 18:14:01 - Nuevos cambios detectados. Analizando commits desde 5838f45f5e8019704943406d491172739a90e3e1 a d8f18a596bf5af132b6eb8c23c5ec14e6acdabf5.
+2025-10-16 18:14:01 - Alerta [Texto]: Patrón 'API_KEY' encontrado en el archivo 'db_config.txt'.
+

@@ -1,36 +1,46 @@
 #!/bin/bash
 
 #Integrantes:
-#    CORONEL, THIAGO MARTÍN
-#    DEVALLE, FELIPE PEDRO
-#    MURILLO, JOEL ADAN
-#    RUIZ, RAFAEL DAVID NAZARENO
+#   CORONEL, THIAGO MARTÍN
+#   DEVALLE, FELIPE PEDRO
+#   MURILLO, JOEL ADAN
+#   RUIZ, RAFAEL DAVID NAZARENO
 
-reconstruir_camino() {
-    local destino=$1
-    local path=()
-    while [[ $destino -ne -1 ]]; do
-        path=("$((destino+1))" "${path[@]}")
-        destino=${prev[$destino]}
+reconstruir_camino_floyd() {
+    local u=$1
+    local v=$2
+    
+    if [[ ${next[$((u*filas + v))]} -eq -1 ]]; then
+        echo "No hay camino"
+        return
+    fi
+    
+    local path=("$((u + 1))")
+    while [[ $u -ne $v ]]; do
+        u=${next[$((u*filas + v))]}
+        path+=("$((u + 1))")
     done
+    
     echo "${path[*]}"
 }
 
 ayuda() {
     echo "
-    Analiza rutas en una red de transporte público representada como una matriz de adyacencia.
+    Uso: $0 -m <archivo> [-h | -c] [-s <separador>]
+
+    Analiza rutas en una red de transporte público.
+
     Opciones:
-        -m, --matriz <archivo>      Ruta del archivo que contiene la matriz de adyacencia.
-        -h, --hub                   Determina qué estación es el 'hub' de la red.
-        -c, --camino                Encuentra el camino más corto entre todas las estaciones (usando Floyd-Warshall).
-        -s, --separador <carácter>  Carácter utilizado como separador de columnas en la matriz.
-        --help                      Muestra este mensaje de ayuda.
+        -m, --matriz <archivo>      Ruta del archivo con la matriz de adyacencia. (Obligatorio)
+        -h, --hub                   Determina la estación con más conexiones ('hub').
+        -c, --camino                Encuentra el camino más corto entre todos los pares de estaciones.
+        -s, --separador <carácter>  Separador de columnas en la matriz. Por defecto: '|'.
+        --help                      Muestra esta ayuda.
 
     Consideraciones:
-        La salida se guardará en un archivo: informe.<nombreArchivoEntrada>"
+        - Las opciones -h y -c son mutuamente excluyentes.
+        - La salida se guarda en 'informe.<nombreArchivoEntrada>' y se sobrescribe en cada ejecución."
 }
-
-
 
 MATRIZ_PATH=""
 HUB=false
@@ -44,7 +54,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         -m|--matriz)
             MATRIZ_PATH="$2"; shift 2;;
-        -h|--hub) # <--- CORRECCIÓN: Unificado con la ayuda (-h en vez de -u)
+        -h|--hub)
             HUB=true; shift;;
         -c|--camino)
             CAMINO=true; shift;;
@@ -53,30 +63,53 @@ while [[ $# -gt 0 ]]; do
         --help)
             ayuda; exit 0;;
         *)
-            echo "Parámetro desconocido: $1"; ayuda; exit 1;;
+            echo "Error: Parámetro desconocido: $1" >&2
+            ayuda
+            exit 1;;
     esac
 done
 
-if [ "$HUB" = false ] && [ "$CAMINO" = false ];then
-    echo "No se especificó qué hacer (-h o -c)"; exit 1
+if [[ -z "$MATRIZ_PATH" ]]; then
+    echo "Error: Debe especificar la ruta de la matriz con -m." >&2
+    ayuda
+    exit 1
+fi
+if ! [[ -f "$MATRIZ_PATH" && -r "$MATRIZ_PATH" ]]; then
+    echo "Error: El archivo '$MATRIZ_PATH' no existe o no se puede leer." >&2
+    exit 1
+fi
+if [ "$HUB" = false ] && [ "$CAMINO" = false ]; then
+    echo "Error: Debe especificar una acción: -h (hub) o -c (camino)." >&2
+    ayuda
+    exit 1
 fi
 if [ "$HUB" = true ] && [ "$CAMINO" = true ]; then
-    echo "No se puede usar -h/-hub junto con -c/--camino"; exit 1
+    echo "Error: No se puede usar -h y -c al mismo tiempo." >&2
+    ayuda
+    exit 1
 fi
-if [ -z "$MATRIZ_PATH" ]; then
-    echo "Debe especificar la matriz con -m"; exit 1
+if [ -z "$SEPARADOR" ]; then
+    echo "Error: El separador (-s) no puede estar vacío." >&2
+    exit 1
 fi
-
 
 while IFS= read -r linea; do
     linea="${linea//[$'\r\n']/}"
     if [[ -z "$linea" ]]; then continue; fi
+    
     IFS="$SEPARADOR" read -r -a fila <<< "$linea"
+    
     if [ $filas -eq 0 ]; then columnas=${#fila[@]}; fi
-    if [ ${#fila[@]} -ne $columnas ]; then echo "La matriz no es cuadrada"; exit 1; fi
-    for valor in "${fila[@]}"; do 
+    
+    if [ ${#fila[@]} -ne $columnas ]; then
+        echo "Error: La matriz no es uniforme. La fila $((filas+1)) tiene ${#fila[@]} elementos, pero se esperaban $columnas." >&2
+        exit 1
+    fi
+    
+    for valor in "${fila[@]}"; do
         if ! [[ "$valor" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-            echo "Valor inválido: $valor"; exit 1
+            echo "Error: La matriz contiene un valor no numérico: '$valor'." >&2
+            exit 1
         fi
         matriz+=("$valor")
     done
@@ -84,43 +117,45 @@ while IFS= read -r linea; do
 done < "$MATRIZ_PATH"
 
 if [ $filas -ne $columnas ]; then
-	echo "No es una matriz cuadrada ($filas x $columnas)"
+	echo "Error: No es una matriz cuadrada (dimensiones: $filas x $columnas)." >&2
 	exit 1
 fi
 
 for ((i=0; i<filas; i++)); do
 	indice=$((i*columnas + i))
-	if [ "${matriz[$indice]}" != "0" ]; then
-		echo "La diagonal principal no es 0 en la posicion $i, $i"
+	if (( $(echo "${matriz[$indice]} != 0" | bc -l) )); then
+		echo "Error: La diagonal principal debe ser 0. El valor en la posición ($((i+1)),$((i+1))) no es cero." >&2
 		exit 1
 	fi
 done
 
 for ((i=0; i<filas; i++)); do
-	for((j=0; j<columnas; j++)); do
-		if [ "${matriz[$((i*columnas + j))]}" != "${matriz[$((j*columnas + i))]}" ]; then
-			echo "La matriz no es simetrica: ($i, $j) != ($j, $i)"
+	for((j=i+1; j<columnas; j++)); do
+		if (( $(echo "${matriz[$((i*columnas + j))]} != ${matriz[$((j*columnas + i))]}" | bc -l) )); then
+			echo "Error: La matriz no es simétrica. El valor en ($((i+1)),$((j+1))) es distinto al de ($((j+1)),$((i+1)))." >&2
 			exit 1
 		fi
 	done
 done
-echo "La matriz es valida"
+echo "La matriz es válida."
 
 DIR_ENTRADA=$(dirname "$MATRIZ_PATH")
 NOMBRE_ARCHIVO_ENTRADA=$(basename "$MATRIZ_PATH")
-ARCHIVO_SALIDA="$DIR_ENTRADA/informe.$NOMBRE_ARCHIVO_ENTRADA"> "$ARCHIVO_SALIDA"
-echo "## Informe de análisis de red de transporte (Algoritmo: Floyd-Warshall)" >> "$ARCHIVO_SALIDA"
+ARCHIVO_SALIDA="$DIR_ENTRADA/informe.$NOMBRE_ARCHIVO_ENTRADA"
+
+echo "## Informe de Análisis de Red de Transporte" > "$ARCHIVO_SALIDA"
 echo "## Archivo analizado: $NOMBRE_ARCHIVO_ENTRADA" >> "$ARCHIVO_SALIDA"
 echo "" >> "$ARCHIVO_SALIDA"
 
 if [ "$HUB" = true ]; then
+    echo "## Análisis de Hub de la Red" >> "$ARCHIVO_SALIDA"
     max_conex=0; hubs=()
     for((i=0; i<filas; i++)); do
         conexiones=0
         for((j=0; j<columnas; j++)); do
             if [ $i -ne $j ]; then
                 val="${matriz[$((i*filas + j))]}"
-                if [ "$(echo "$val > 0" | bc)" -eq 1 ]; then
+                if (( $(echo "$val > 0" | bc -l) )); then
                     conexiones=$((conexiones+1))
                 fi
             fi
@@ -133,28 +168,27 @@ if [ "$HUB" = true ]; then
         fi
     done
     if [ $max_conex -eq 0 ]; then
-		echo "**Hub de la red:** Ninguna estación tiene conexiones directas."
-        echo "**Hub de la red:** Ninguna estación tiene conexiones directas." >> "$ARCHIVO_SALIDA"
+        echo "**Hub de la red:** Ninguna estación tiene conexiones." >> "$ARCHIVO_SALIDA"
     elif [ ${#hubs[@]} -eq 1 ]; then
-		echo "**Hub de la red:** Estación ${hubs[0]} ($max_conex conexiones)"
         echo "**Hub de la red:** Estación ${hubs[0]} ($max_conex conexiones)" >> "$ARCHIVO_SALIDA"
-    else
-		echo "**Hubs de la red (empate):** Estaciones ${hubs[*]} ($max_conex conexiones)"
+    else<
         echo "**Hubs de la red (empate):** Estaciones ${hubs[*]} ($max_conex conexiones)" >> "$ARCHIVO_SALIDA"
     fi
 fi
 
 if [ "$CAMINO" = true ]; then
+    echo "## Análisis de Caminos Más Cortos (Floyd-Warshall)" >> "$ARCHIVO_SALIDA"
     INF=999999
     dist=(); next=()
+
     for ((i=0; i<filas; i++)); do
         for ((j=0; j<columnas; j++)); do
             val=${matriz[$((i*filas + j))]}
             indice=$((i*filas + j))
             if [[ $i -eq $j ]]; then
                 dist[$indice]=0
-                next[$indice]=$i
-            elif [ "$(echo "$val > 0" | bc)" -eq 1 ]; then
+                next[$indice]=$j
+            elif (( $(echo "$val > 0" | bc -l) )); then
                 dist[$indice]=$val
                 next[$indice]=$j
             else
@@ -169,9 +203,11 @@ if [ "$CAMINO" = true ]; then
             for ((j=0; j<columnas; j++)); do
                 dist_ik=${dist[$((i*filas + k))]}
                 dist_kj=${dist[$((k*filas + j))]}
-                dist_ij=${dist[$((i*filas + j))]}
+                
+                if [[ $dist_ik == $INF || $dist_kj == $INF ]]; then continue; fi
                 
                 suma_caminos=$(echo "$dist_ik + $dist_kj" | bc)
+                dist_ij=${dist[$((i*filas + j))]}
                 
                 if (( $(echo "$suma_caminos < $dist_ij" | bc -l) )); then
                     dist[$((i*filas + j))]=$suma_caminos
@@ -180,8 +216,7 @@ if [ "$CAMINO" = true ]; then
             done
         done
     done
-    
-    echo "**Análisis de caminos más cortos (Floyd-Warshall):**" >> "$ARCHIVO_SALIDA"
+
     for ((i=0; i<filas; i++)); do
         for ((j=0; j<columnas; j++)); do
             if [[ $i -ne $j ]]; then
@@ -189,8 +224,8 @@ if [ "$CAMINO" = true ]; then
                 if [ "$distancia_final" == "$INF" ]; then
                     echo "De Estación $((i+1)) a Estación $((j+1)): No hay camino." >> "$ARCHIVO_SALIDA"
                 else
-                    camino=$(reconstruir_camino_floyd $i $j next)
-                    echo "De Estación $((i+1)) a Estación $((j+1)): tiempo $distancia_final, ruta: $camino" >> "$ARCHIVO_SALIDA"
+                    camino=$(reconstruir_camino_floyd $i $j)
+                    echo "De Estación $((i+1)) a Estación $((j+1)): tiempo $distancia_final, ruta: ${camino// / -> }" >> "$ARCHIVO_SALIDA"
                 fi
             fi
         done
@@ -199,4 +234,3 @@ fi
 
 echo "Informe generado con éxito en: $ARCHIVO_SALIDA"
 exit 0
-
