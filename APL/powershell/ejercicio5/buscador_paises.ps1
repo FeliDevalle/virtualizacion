@@ -1,42 +1,50 @@
 <#
-#Integrantes:
-#    CORONEL, THIAGO MARTÍN
-#    DEVALLE, FELIPE PEDRO
-#    MURILLO, JOEL ADAN
-#    RUIZ, RAFAEL DAVID NAZARENO
 .SYNOPSIS
-    Consulta la API REST Countries y muestra información de países.
+    Consulta la API REST Countries y muestra informacion de paises.
 
 .DESCRIPTION
-    Consulta la API de REST Countries para obtener datos de países.
-    Los resultados se guardan en un archivo de caché en formato JSON.
-    Cada entrada del caché tiene un TTL (time to live). Pasado ese tiempo,
+    Grupo 1
+    Integrantes:
+    CORONEL, THIAGO MARTÍN
+    DEVALLE, FELIPE PEDRO
+    MURILLO, JOEL ADAN
+    RUIZ, RAFAEL DAVID NAZARENO
+
+    Consulta la API de REST Countries para obtener datos de paises.
+    Los resultados se guardan en un archivo de cache en formato JSON.
+    Cada entrada del cache tiene un TTL (time to live). Pasado ese tiempo,
     se vuelve a consultar la API para actualizar los datos.
 
-.PARAMETER nombre
-    Nombre del país o países a consultar. Puede recibir un array de strings.
+.PARAMETER Nombre
+    Nombre del pais o paises a consultar. Puede recibir un array de strings.
 
-.PARAMETER ttl
-    Tiempo de validez del caché en segundos. Pasado este tiempo se consulta
+.PARAMETER TTL
+    Tiempo de validez del cache en segundos. Pasado este tiempo se consulta
     nuevamente la API para actualizar los valores.
 
 .EXAMPLE
-    .\ejercicio5.ps1 -nombre spain -ttl 3600
-    Busca información de España y la guarda en caché por 1 hora.
+    .\buscador_paises.ps1 -Nombre spain -TTL 3600
+    Busca informacion de España y la guarda en cache por 1 hora.
+
+.EXAMPLE
+    .\buscador_paises.ps1 -Nombre spain argentina brazil -TTL 120
+    Busca multiples paises en una sola ejecucion.
 #>
 
 param(
     [Parameter(Mandatory=$true)]
-    [string[]]$nombre,
+    [string[]]$Nombre,
 
     [Parameter(Mandatory=$true)]
-    [int]$ttl
+    [int]$TTL
 )
 
-# Archivo de caché
-$cacheFile = Join-Path -Path (Split-Path -Parent $MyInvocation.MyCommand.Definition) -ChildPath "cache_paises.json"
+# === Archivo de caché seguro ===
+$cacheDir = Join-Path -Path $env:TEMP -ChildPath "PS_Cache_Paises"
+if (-not (Test-Path $cacheDir)) { New-Item -Path $cacheDir -ItemType Directory | Out-Null }
+$cacheFile = Join-Path -Path $cacheDir -ChildPath "cache_paises.json"
 
-# Cargar cache existente y convertir a Hashtable
+# === Cargar cache existente ===
 if (Test-Path $cacheFile) {
     try {
         $obj = Get-Content $cacheFile -Raw | ConvertFrom-Json
@@ -52,58 +60,19 @@ if (Test-Path $cacheFile) {
     $cache = @{}
 }
 
-
-# Función para guardar el caché
+# === Función para guardar cache ===
 function Guardar-Cache {
     param($cache)
     try {
         $cache | ConvertTo-Json -Depth 5 | Set-Content -Path $cacheFile -Encoding UTF8
     } catch {
-        Write-Warning "No se pudo guardar la cache en ${cacheFile}: ${_}"
+        Write-Warning "No se pudo guardar la cache en $cacheFile ${_}"
     }
 }
 
-# Función para consultar país
-function Consultar-Pais {
-    param($nombre, $ttl)
-
-    $paisKey = $nombre.ToLower()
-
-    if ($cache.ContainsKey($paisKey)) {
-        $entrada = $cache[$paisKey]
-        $timestamp = [datetime]::Parse($entrada.timestamp)
-
-        if ((Get-Date) - $timestamp -lt (New-TimeSpan -Seconds $ttl)) {
-            # Usar datos del caché
-            $data = $entrada.data
-            Mostrar-Pais $data
-            return
-        }
-    }
-
-    # Consultar API si no está en caché o TTL vencido
-    try {
-        $url = "https://restcountries.com/v3.1/name/$nombre"
-        $response = Invoke-RestMethod -Uri $url -ErrorAction Stop
-        $data = $response[0]
-
-        # Guardar en caché
-        $cache[$paisKey] = @{
-            timestamp = (Get-Date).ToString("o")
-            data      = $data
-        }
-
-        Guardar-Cache $cache
-        Mostrar-Pais $data
-    } catch {
-        Write-Warning "Error al consultar API para $nombre ${_}"
-    }
-}
-
-# Función para mostrar datos del país
+# === Función para mostrar país ===
 function Mostrar-Pais {
     param($data)
-
     $pais      = $data.name.common
     $capital   = $data.capital -join ", "
     $region    = $data.region
@@ -118,7 +87,39 @@ function Mostrar-Pais {
     Write-Output ""
 }
 
-# Ejecutar para cada país
-foreach ($p in $nombre) {
-    Consultar-Pais -nombre $p -ttl $ttl
+# === Función para consultar API y usar cache ===
+function Consultar-Pais {
+    param($paisNombre, $TTL)
+
+    $paisKey = $paisNombre.ToLower()
+
+    if ($cache.ContainsKey($paisKey)) {
+        $entrada = $cache[$paisKey]
+        $timestamp = [datetime]::Parse($entrada.timestamp)
+        if ((Get-Date) - $timestamp -lt (New-TimeSpan -Seconds $TTL)) {
+            Mostrar-Pais $entrada.data
+            return
+        }
+    }
+
+    try {
+        $url = "https://restcountries.com/v3.1/name/$paisNombre"
+        $response = Invoke-RestMethod -Uri $url -ErrorAction Stop
+        $data = $response[0]
+
+        $cache[$paisKey] = @{
+            timestamp = (Get-Date).ToString("o")
+            data      = $data
+        }
+
+        Guardar-Cache $cache
+        Mostrar-Pais $data
+    } catch {
+        Write-Warning "Error al consultar API para $paisNombre ${_}"
+    }
+}
+
+# === Ejecutar para cada país ===
+foreach ($p in $Nombre) {
+    Consultar-Pais -paisNombre $p -TTL $TTL
 }
