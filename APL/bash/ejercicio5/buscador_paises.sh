@@ -5,55 +5,65 @@
 #    MURILLO, JOEL ADAN
 #    RUIZ, RAFAEL DAVID NAZARENO
 
-CACHE_FILE="$(dirname "$0")/cache_paises.txt"
-DIR_CACHE=$(dirname "$CACHE_FILE")
-mkdir -p "$DIR_CACHE"
+# === CONFIGURACIÓN DE CACHÉ ===
+CACHE_DIR="/tmp/bash_paises_cache"
+mkdir -p "$CACHE_DIR"
+CACHE_FILE="$CACHE_DIR/cache_paises.txt"
 
-NOMBRE=""
+NOMBRES=()
 TTL=""
 
+# === FUNCIÓN DE AYUDA ===
 mostrar_ayuda() {
     cat << EOF
-Uso: $0 -n <pais> -t <ttl_en_segundos>
+Uso: $0 -n <pais1> [pais2 ...] -t <ttl_en_segundos>
 
 Opciones:
-  -n <pais>           Nombre del país a consultar (ej: spain)
-  -t <segundos>       Tiempo de validez del caché en segundos
-  -h, --help          Muestra esta ayuda
+  -n <pais1> [pais2 ...]  Nombre(s) del país a consultar (ej: argentina spain)
+  -t <segundos>           Tiempo de validez del caché en segundos
+  -h, --help              Muestra esta ayuda
 
 Ejemplo:
-  $0 -n spain -t 3600
+  $0 -n spain argentina brazil -t 3600
 EOF
 }
 
+# === CONSULTAR API Y GUARDAR EN CACHÉ ===
 consultar_api() {
-    curl -s "https://restcountries.com/v3.1/name/$NOMBRE" > "$CACHE_FILE.tmp"
+    local pais="$1"
+    local url="https://restcountries.com/v3.1/name/$pais"
+    curl -s "$url" > "$CACHE_FILE.tmp"
+
     if [[ $? -ne 0 || ! -s "$CACHE_FILE.tmp" ]]; then
-        echo "Error: No se pudo obtener información de la API" >&2
+        echo "Error: No se pudo obtener información de la API para '$pais'" >&2
         rm -f "$CACHE_FILE.tmp"
-        exit 1
+        return 1
     fi
+
+    local fecha json_oneline
     fecha=$(date +%s)
-    # Guardamos: NOMBRE|timestamp|JSON (JSON en una sola línea)
     json_oneline=$(tr '\n' ' ' < "$CACHE_FILE.tmp" | sed 's/  */ /g')
-    echo "$NOMBRE|$fecha|$json_oneline" >> "$CACHE_FILE"
-    # dejamos copia temporal para parsear
+    echo "$pais|$fecha|$json_oneline" >> "$CACHE_FILE"
+
     echo "$json_oneline" > "$CACHE_FILE.tmp"
+    return 0
 }
 
+# === BUSCAR EN CACHÉ ===
 buscar_cache() {
+    local pais="$1"
     if [[ ! -f "$CACHE_FILE" ]]; then
         return 1
     fi
 
-    # Buscar la última entrada del país (case-insensitive)
-    linea=$(grep -i "^${NOMBRE}|" "$CACHE_FILE" 2>/dev/null | tail -n 1)
+    local linea nombre_guardado fecha_guardada json_guardado ahora diferencia
+    linea=$(grep -i "^${pais}|" "$CACHE_FILE" 2>/dev/null | tail -n 1)
     if [[ -z "$linea" ]]; then
         return 1
     fi
 
     nombre_guardado="${linea%%|*}"
-    rest="${linea#*|}"
+    local rest="${linea#*|}"
     fecha_guardada="${rest%%|*}"
     json_guardado="${rest#*|}"
 
@@ -61,7 +71,6 @@ buscar_cache() {
     diferencia=$((ahora - fecha_guardada))
 
     if [[ $diferencia -lt $TTL ]]; then
-        # guardar JSON en tmp para que lo lea el parser
         echo "$json_guardado" > "$CACHE_FILE.tmp"
         return 0
     else
@@ -69,71 +78,56 @@ buscar_cache() {
     fi
 }
 
+# === MOSTRAR RESULTADO EN FORMATO REQUERIDO ===
 mostrar_resultado() {
-    # El JSON está en una sola línea en $CACHE_FILE.tmp
     awk '
     BEGIN {
-        in_name = 0; in_currencies = 0;
         country=""; capital=""; region=""; population=""; curcode=""; curname="";
-        found = 0;
     }
     {
-        # procesamos la linea completa (JSON en una sola línea)
         line = $0
 
-        # BUSCAR name.common dentro del bloque "name": { ... }
-        if (match(line, /"name"[[:space:]]*:[[:space:]]*{[^}]*"common"[[:space:]]*:[[:space:]]*"([^"]*)"/, m)) {
+        if (match(line, /"name"[[:space:]]*:[[:space:]]*{[^}]*"common"[[:space:]]*:[[:space:]]*"([^"]*)"/, m))
             country = m[1]
-        }
 
-        # BUSCAR capital (primer elemento del array)
-        if (match(line, /"capital"[[:space:]]*:[[:space:]]*\["?([^"\]]*)"?/, m)) {
+        if (match(line, /"capital"[[:space:]]*:[[:space:]]*\["?([^"\]]*)"?/, m))
             capital = m[1]
-        }
 
-        # BUSCAR region
-        if (match(line, /"region"[[:space:]]*:[[:space:]]*"([^"]*)"/, m)) {
+        if (match(line, /"region"[[:space:]]*:[[:space:]]*"([^"]*)"/, m))
             region = m[1]
-        }
 
-        # BUSCAR population
-        if (match(line, /"population"[[:space:]]*:[[:space:]]*([0-9]+)/, m)) {
+        if (match(line, /"population"[[:space:]]*:[[:space:]]*([0-9]+)/, m))
             population = m[1]
-        }
 
-        # BUSCAR currencies: obtenemos el primer par "COD":{... "name":"NOMBRE" ...}
         if (match(line, /"currencies"[[:space:]]*:[[:space:]]*{[^}]*"([^"]+)"[[:space:]]*:[[:space:]]*{[^}]*"name"[[:space:]]*:[[:space:]]*"([^"]*)"/, m)) {
-            curcode = m[1]; curname = m[2]
+            curcode = m[1]
+            curname = m[2]
         }
 
-        # Imprimir si al menos encontramos el nombre (name.common)
         if (country != "") {
             print "País: " country
             if (capital != "") print "Capital: " capital
             if (region != "") print "Región: " region
             if (population != "") print "Población: " population
             if (curname != "") {
-                # si tenemos curname y curcode mostramos: Moneda: Euro (EUR)
                 printf "Moneda: %s", curname
                 if (curcode != "") printf " (%s)", curcode
                 printf "\n"
             }
-            found = 1
             exit
-        } else {
-            # si no encontramos country, imprimimos mensaje de error mínimo
-            print "No se pudo extraer la información esperada del JSON." > "/dev/stderr"
-            exit 1
         }
     }' "$CACHE_FILE.tmp"
 }
 
-# --- parsear parametros (simple)
+# === PARSEO DE PARÁMETROS ===
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -n|--nombre)
-            NOMBRE="$2"
-            shift 2
+            shift
+            while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+                NOMBRES+=("$1")
+                shift
+            done
             ;;
         -t|--ttl)
             TTL="$2"
@@ -151,16 +145,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# validaciones básicas
-if [[ -z "$NOMBRE" || -z "$TTL" ]]; then
+# === VALIDACIONES ===
+if [[ ${#NOMBRES[@]} -eq 0 || -z "$TTL" ]]; then
     mostrar_ayuda
     exit 1
 fi
 
-if ! buscar_cache; then
-    consultar_api
-    buscar_cache || { echo "Error leyendo cache despues de consulta" >&2; exit 1; }
-fi
-
-mostrar_resultado
-
+# === LÓGICA PRINCIPAL PARA CADA PAÍS ===
+for NOMBRE in "${NOMBRES[@]}"; do
+    if ! buscar_cache "$NOMBRE"; then
+        consultar_api "$NOMBRE" || continue
+        buscar_cache "$NOMBRE" || { echo "Error leyendo caché después de la consulta" >&2; continue; }
+    fi
+    mostrar_resultado
+    echo "----------------------------"
+done
