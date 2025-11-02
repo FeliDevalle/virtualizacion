@@ -171,7 +171,7 @@ if [ "$HUB" = true ]; then
         echo "**Hub de la red:** Ninguna estación tiene conexiones." >> "$ARCHIVO_SALIDA"
     elif [ ${#hubs[@]} -eq 1 ]; then
         echo "**Hub de la red:** Estación ${hubs[0]} ($max_conex conexiones)" >> "$ARCHIVO_SALIDA"
-    else<
+    else
         echo "**Hubs de la red (empate):** Estaciones ${hubs[*]} ($max_conex conexiones)" >> "$ARCHIVO_SALIDA"
     fi
 fi
