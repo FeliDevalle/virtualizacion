@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Consulta la API REST Countries y muestra informacion de paises.
+    Consulta la API REST Countries y muestra información de países.
 
 .DESCRIPTION
     Grupo 1
@@ -10,41 +10,51 @@
     MURILLO, JOEL ADAN
     RUIZ, RAFAEL DAVID NAZARENO
 
-    Consulta la API de REST Countries para obtener datos de paises.
-    Los resultados se guardan en un archivo de cache en formato JSON.
-    Cada entrada del cache tiene un TTL (time to live). Pasado ese tiempo,
+    Consulta la API de REST Countries para obtener datos de países.
+    Los resultados se guardan en un archivo de caché en formato JSON.
+    Cada entrada del caché tiene un TTL (time to live). Pasado ese tiempo,
     se vuelve a consultar la API para actualizar los datos.
 
 .PARAMETER Nombre
-    Nombre del pais o paises a consultar. Puede recibir un array de strings.
+    Nombre del país o países a consultar. Puede recibir un array de strings.
 
 .PARAMETER TTL
-    Tiempo de validez del cache en segundos. Pasado este tiempo se consulta
+    Tiempo de validez del caché en segundos. Pasado este tiempo se consulta
     nuevamente la API para actualizar los valores.
 
 .EXAMPLE
-    .\buscador_paises.ps1 -Nombre spain -TTL 3600
-    Busca informacion de España y la guarda en cache por 1 hora.
+    ./buscador_paises.ps1 -Nombre spain -TTL 3600
+    Busca información de España y la guarda en caché por 1 hora.
 
 .EXAMPLE
-    .\buscador_paises.ps1 -Nombre spain argentina brazil -TTL 120
-    Busca multiples paises en una sola ejecucion.
+    ./buscador_paises.ps1 -Nombre spain,argentina,brazil -TTL 120
+    Busca múltiples países en una sola ejecución.
 #>
 
 param(
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
     [string[]]$Nombre,
 
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
     [int]$TTL
 )
 
-# === Archivo de caché seguro ===
-$cacheDir = Join-Path -Path $env:TEMP -ChildPath "PS_Cache_Paises"
-if (-not (Test-Path $cacheDir)) { New-Item -Path $cacheDir -ItemType Directory | Out-Null }
+# === Archivo de caché seguro (compatible Windows/Linux) ===
+if ($IsWindows) {
+    $tempPath = $env:TEMP
+} elseif ($env:TMPDIR) {
+    $tempPath = $env:TMPDIR
+} else {
+    $tempPath = "/tmp"
+}
+
+$cacheDir = Join-Path -Path $tempPath -ChildPath "PS_Cache_Paises"
+if (-not (Test-Path $cacheDir)) {
+    New-Item -Path $cacheDir -ItemType Directory -Force | Out-Null
+}
 $cacheFile = Join-Path -Path $cacheDir -ChildPath "cache_paises.json"
 
-# === Cargar cache existente ===
+# === Cargar caché existente ===
 if (Test-Path $cacheFile) {
     try {
         $obj = Get-Content $cacheFile -Raw | ConvertFrom-Json
@@ -60,13 +70,13 @@ if (Test-Path $cacheFile) {
     $cache = @{}
 }
 
-# === Función para guardar cache ===
+# === Función para guardar caché ===
 function Guardar-Cache {
     param($cache)
     try {
         $cache | ConvertTo-Json -Depth 5 | Set-Content -Path $cacheFile -Encoding UTF8
     } catch {
-        Write-Warning "No se pudo guardar la cache en $cacheFile ${_}"
+        Write-Warning "No se pudo guardar la caché en $cacheFile $_"
     }
 }
 
@@ -87,7 +97,7 @@ function Mostrar-Pais {
     Write-Output ""
 }
 
-# === Función para consultar API y usar cache ===
+# === Función para consultar API y usar caché ===
 function Consultar-Pais {
     param($paisNombre, $TTL)
 
@@ -115,8 +125,13 @@ function Consultar-Pais {
         Guardar-Cache $cache
         Mostrar-Pais $data
     } catch {
-        Write-Warning "Error al consultar API para $paisNombre ${_}"
+        Write-Warning "Error al consultar API para $paisNombre $_"
     }
+}
+
+# === Ejecutar para cada país ===
+foreach ($p in $Nombre) {
+    Consultar-Pais -paisNombre $p -TTL $TTL
 }
 
 # === Ejecutar para cada país ===
