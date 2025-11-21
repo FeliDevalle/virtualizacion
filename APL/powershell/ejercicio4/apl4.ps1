@@ -15,7 +15,7 @@
   Ruta del archivo de configuración con patrones. Soporta comentarios con '#' y prefijos 'regex:'.
 
 .PARAMETER log
-  Ruta del archivo donde se registran las alertas (por defecto"C:\audit.log).
+  Ruta del archivo donde se registran las alertas (por defecto "audit.log").
 
 .PARAMETER alerta
   Intervalo en segundos entre comprobaciones (por defecto 10).
@@ -61,6 +61,16 @@ function Fail([string]$msg, [string]$details = $null) {
     exit 1
 }
 
+# Función auxiliar para obtener ruta absoluta incluso si el archivo no existe
+function Get-AbsolutePath([string]$path) {
+    # Expansión manual de ~ para Linux/Mac si es necesario
+    if ($path.StartsWith("~")) {
+        $homeDir = [System.Environment]::GetFolderPath('UserProfile')
+        $path = $path.Replace("~", $homeDir)
+    }
+    return [System.IO.Path]::GetFullPath($path)
+}
+
 function Get-TempDir {
     $tempPath = ''
     $lastError = ''
@@ -68,6 +78,7 @@ function Get-TempDir {
     try {
         $userTemp = [System.IO.Path]::GetTempPath()
         if (-not [string]::IsNullOrWhiteSpace($userTemp)) {
+            # Verificamos escritura creando un archivo dummy
             $testFile = Join-Path $userTemp ([System.Guid]::NewGuid().ToString())
             New-Item -Path $testFile -ItemType File -Force > $null
             Remove-Item -Path $testFile -Force
@@ -78,7 +89,6 @@ function Get-TempDir {
     }
 
     if ([string]::IsNullOrWhiteSpace($tempPath)) {
-        # recurrimos a las rutas de sistema como último recurso.
         if ($IsWindows) {
             $tempPath = Join-Path $env:windir "Temp"
         } else {
@@ -99,6 +109,7 @@ function Get-TempDir {
 
 function Make-SafeName([string]$path) {
     if (-not $path) { return 'unknown_repo' }
+    # Normalizamos a una cadena segura para nombre de archivo
     $safe = ($path -replace '[\\/: ]','_') -replace '[^\w\-_\.]','_'
     return $safe
 }
@@ -119,13 +130,23 @@ function Test-ProcessRunning([int]$pid1) {
     return $(try { Get-Process -Id $pid1 -ErrorAction Stop } catch { $false }) -ne $false
 }
 
+# -----------------------
 # --- MODO LANZADOR ---
+# -----------------------
 if (-not $daemon) {
     if (-not $repo) { Fail "Error: El parámetro -repo es obligatorio." }
 
-    $pidFile = Get-PidFilePath $repo
-    $errorFile = Get-ErrorFilePath $repo 
+    # Resolvemos repo de forma absoluta para generar IDs consistentes
+    try {
+        $repoResolved = (Resolve-Path $repo -ErrorAction Stop).ProviderPath
+    } catch {
+        Fail "El repositorio '$repo' no existe o no es accesible."
+    }
 
+    $pidFile = Get-PidFilePath $repoResolved
+    $errorFile = Get-ErrorFilePath $repoResolved
+
+    # --- Lógica KILL ---
     if ($kill) {
         if (Test-Path $pidFile) {
             try {
@@ -140,6 +161,7 @@ if (-not $daemon) {
         exit 0
     }
 
+    # --- Lógica START ---
     if (-not $configuracion) { Fail "Error: El parámetro -configuracion es obligatorio para iniciar el demonio." }
 
     if (Test-Path $pidFile) {
@@ -153,16 +175,39 @@ if (-not $daemon) {
     
     Remove-Item $errorFile -ErrorAction SilentlyContinue
 
+    # Preparamos rutas absolutas para pasarlas al hijo
     $scriptFullPath = $MyInvocation.MyCommand.Definition
+    $repoAbs = $repoResolved
+    $configAbs = (Resolve-Path $configuracion).Path
+    
+    # Corrección: Usamos nuestra función auxiliar para el log, ya que puede no existir
+    $logAbs = Get-AbsolutePath $log
+
     $argList = @(
         "-NoProfile", "-ExecutionPolicy", "Bypass",
         "-File", "`"$scriptFullPath`"",
-        "-repo", "`"$repo`"",
-        "-configuracion", "`"$configuracion`"",
-        "-log", "`"$((Resolve-Path $log).ProviderPath)`"",
+        "-repo", "`"$repoAbs`"",
+        "-configuracion", "`"$configAbs`"",
+        "-log", "`"$logAbs`"",
         "-alerta", $alerta, "-daemon"
     )
-    Start-Process -FilePath powershell.exe -ArgumentList $argList -WindowStyle Hidden -PassThru | Out-Null
+
+    # Corrección: Detectar binario (pwsh vs powershell) y evitar -WindowStyle en Linux
+    $psBinary = "powershell"
+    if ($IsLinux) { $psBinary = "pwsh" }
+
+    $startParams = @{
+        FilePath = $psBinary
+        ArgumentList = $argList
+        PassThru = $true
+    }
+
+    # Solo agregamos WindowStyle Hidden si NO es Linux/Unix
+    if (-not $IsLinux) {
+        $startParams["WindowStyle"] = "Hidden"
+    }
+
+    $process = Start-Process @startParams
     Start-Sleep -Seconds 1
 
     $wait = 0
@@ -173,7 +218,9 @@ if (-not $daemon) {
 
     if (Test-Path $pidFile) {
         $daemonPid = Get-Content $pidFile -ErrorAction SilentlyContinue
-        Write-Host "Demonio iniciado en segundo plano (PID $daemonPid). Monitoreando '$repo' cada $alerta segundos."
+        Write-Host "Demonio iniciado en segundo plano (PID $daemonPid)."
+        Write-Host "Monitoreando: $repoAbs"
+        Write-Host "Log: $logAbs"
         Remove-Item $errorFile -ErrorAction SilentlyContinue 
         exit 0
     } else {
@@ -186,23 +233,34 @@ if (-not $daemon) {
     }
 }
 
-# -------------------
+# -----------------------
 # --- MODO DEMONIO ---
-# -------------------
+# -----------------------
 try {
+    # En modo demonio, las rutas ya vienen resueltas (absolutas) desde el lanzador
     if (-not $repo) { throw "Parámetro -repo no fue recibido." }
     if (-not $configuracion) { throw "Parámetro -configuracion no fue recibido." }
+    
+    $repoFull = $repo
+    $configFull = $configuracion
+    $logFull = $log
 
-    $repoFull = (Resolve-Path $repo -ErrorAction Stop).ProviderPath
-    $configFull = (Resolve-Path $configuracion -ErrorAction Stop).ProviderPath
-    $logFull = (Resolve-Path $log -ErrorAction Stop).ProviderPath
-    # Verificamos que la ruta para el archivo de log no sea un directorio. (PERDÍ MUCHO TIEMPO EN ESTO)
+    # Verificación del log
     if (Test-Path -Path $logFull -PathType Container) {
         throw "La ruta para el archivo de log ('$logFull') no puede ser un directorio."
     }
+    
+    # Asegurar directorio del log
+    $logDir = Split-Path -Parent $logFull
+    if (-not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
+
     if (-not (Test-Path (Join-Path $repoFull ".git"))) { throw "'$repoFull' no es un repositorio Git válido." }
 
     $pidFile = Get-PidFilePath $repoFull
+    
+    # Doble chequeo de singleton
     if (Test-Path $pidFile) {
         try {
             $otherPid = [int](Get-Content $pidFile -ErrorAction Stop)
@@ -217,6 +275,7 @@ try {
 }
 
 Set-Location $repoFull
+# Detectar la rama remota por defecto (generalmente main o master)
 $branch = (git symbolic-ref refs/remotes/origin/HEAD -q) -replace 'refs/remotes/origin/', ''
 if ([string]::IsNullOrWhiteSpace($branch)) { $branch = 'main' }
 
@@ -226,6 +285,8 @@ try {
 } catch { $lastCommit = "" }
 
 if ([string]::IsNullOrWhiteSpace($lastCommit)) {
+    # Si falla el git inicial, escribimos error y salimos para no quedar zombies
+    "No se pudo obtener el commit inicial de origin/$branch" | Out-File -FilePath (Get-ErrorFilePath $repoFull)
     Remove-Item $pidFile -ErrorAction SilentlyContinue
     exit 1
 }
@@ -292,6 +353,7 @@ try {
         
         Start-Sleep -Seconds $alerta
 
+        # Verificación de vida: si el archivo PID fue borrado (por comando kill), salir
         if (-not (Test-Path $pidFile)) { exit 0 }
     }
 } finally {
