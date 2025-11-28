@@ -221,20 +221,39 @@ function Write-Alert([string]$pattern, [string]$file, [string]$logPath) {
 }
 
 try {
+    # LOG DE DEBUG: Confirmar que entramos al bucle
+    "DEBUG: Iniciando bucle de monitoreo sobre $branch" | Out-File -FilePath $logFull -Append -Encoding utf8
+
     while ($true) {
         try {
-            # Ya no hacemos git fetch origin, miramos el estado local
-            $newCommit = (git rev-parse HEAD 2>$null).Trim()
+            # 1. Intentamos leer el commit actual
+            $gitOutput = git rev-parse HEAD 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                "ERROR CRÍTICO GIT: $gitOutput" | Out-File -FilePath $logFull -Append -Encoding utf8
+                throw "Git falló al leer HEAD"
+            }
+            $newCommit = "$gitOutput".Trim()
+
+            # LOG DE DEBUG: Escribir qué commits estamos comparando (Solo para ver si está vivo)
+            # Descomenta la siguiente linea si quieres ver que el script respira cada 10 segs:
+            # "DEBUG Check: Nuevo=$newCommit | Viejo=$lastCommit" | Out-File -FilePath $logFull -Append
 
             if (-not [string]::IsNullOrWhiteSpace($newCommit) -and $newCommit -ne $lastCommit) {
                 
                 $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-                ("[$ts] Nuevo commit detectado: {0}" -f $newCommit) | Out-File -FilePath $logFull -Append -Encoding utf8
+                ("[$ts] CAMBIO DETECTADO. Procesando commit: $newCommit") | Out-File -FilePath $logFull -Append -Encoding utf8
                 
-                # Carga de patrones (se mueve adentro para permitir cambios en caliente del archivo conf)
+                # 2. Manejo del caso "Primer arranque" o repo vacío
+                if ($lastCommit -eq "0000000000000000000000000000000000000000") {
+                    "DEBUG: Es la primera ejecución, saltamos diff y actualizamos referencia." | Out-File -FilePath $logFull -Append
+                    $lastCommit = $newCommit
+                    continue 
+                }
+
+                # 3. Cargar Patrones
                 $patterns = @()
-                $patternLines = Get-Content $configFull -ErrorAction SilentlyContinue
-                if ($null -ne $patternLines) {
+                if (Test-Path $configFull) {
+                    $patternLines = Get-Content $configFull
                     foreach ($line in $patternLines) {
                         $lineTrim = $line.Trim()
                         if ([string]::IsNullOrWhiteSpace($lineTrim) -or $lineTrim.StartsWith('#')) { continue }
@@ -244,41 +263,57 @@ try {
                             $patterns += [pscustomobject]@{ Type = 'Literal'; Value = $lineTrim }
                         }
                     }
+                    "DEBUG: Patrones cargados: $($patterns.Count)" | Out-File -FilePath $logFull -Append
+                } else {
+                    "ERROR: No encuentro archivo conf: $configFull" | Out-File -FilePath $logFull -Append
                 }
 
-                # Diff contra el commit anterior
-                $files = git diff --name-only $lastCommit $newCommit 2>$null
+                # 4. Git Diff
+                # Quitamos el 2>$null para ver si explota aquí
+                $files = git diff --name-only $lastCommit $newCommit 
+                "DEBUG: Archivos modificados: $files" | Out-File -FilePath $logFull -Append
                 
                 foreach ($file in $files) {
-                    # Obtenemos el contenido del archivo en ESE commit
-                    $spec = "{0}:{1}" -f $newCommit, $file
-                    $content = git show $spec 2>$null
+                    if ([string]::IsNullOrWhiteSpace($file)) { continue }
+
+                    # 5. Git Show
+                    $spec = "${newCommit}:${file}"
+                    # Importante: forzar encoding string para que powershell no se lie con bytes
+                    $content = git show $spec 2>&1 | Out-String
                     
-                    if ($null -ne $content) {
-                        foreach ($patternObj in $patterns) {
-                            if ($patternObj.Type -eq 'Regex') {
-                                try {
-                                    if ($content -match $patternObj.Value) { Write-Alert $patternObj.Value $file $logFull }
-                                } catch {
-                                    "Error en regex" | Out-File -FilePath $logFull -Append
-                                }
-                            } else {
-                                if ($content -match [regex]::Escape($patternObj.Value)) {
-                                    Write-Alert $patternObj.Value $file $logFull
-                                }
-                            }
+                    if ($LASTEXITCODE -ne 0) {
+                         "ERROR leyendo archivo $file : $content" | Out-File -FilePath $logFull -Append
+                         continue
+                    }
+
+                    foreach ($patternObj in $patterns) {
+                        $found = $false
+                        if ($patternObj.Type -eq 'Regex') {
+                            if ($content -match $patternObj.Value) { $found = $true }
+                        } else {
+                            if ($content -match [regex]::Escape($patternObj.Value)) { $found = $true }
+                        }
+
+                        if ($found) {
+                             Write-Alert $patternObj.Value $file $logFull
+                             "DEBUG: ¡Alerta generada para $file!" | Out-File -FilePath $logFull -Append
                         }
                     }
                 }
+                # Actualizamos el puntero AL FINAL
                 $lastCommit = $newCommit
             }
         } catch {
-             # Errores silenciosos al log para no matar el demonio
-             $_.Exception.Message | Out-File -FilePath $logFull -Append
+             $errTs = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+             # AQUÍ ESTÁ LA CLAVE: Si falla, escribimos la excepción real en el log
+             ("[$errTs] EXCEPTION en bucle: " + $_.Exception.ToString()) | Out-File -FilePath $logFull -Append -Encoding utf8
         }
         
         Start-Sleep -Seconds $alerta
-        if (-not (Test-Path $pidFile)) { exit 0 }
+        if (-not (Test-Path $pidFile)) { 
+            "DEBUG: PID file borrado, saliendo." | Out-File -FilePath $logFull -Append
+            exit 0 
+        }
     }
 } finally {
     Remove-Item $pidFile -ErrorAction SilentlyContinue
